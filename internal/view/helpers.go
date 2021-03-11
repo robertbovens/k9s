@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/config"
+	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -50,7 +52,6 @@ func k8sEnv(c *client.Config) Env {
 
 func defaultEnv(c *client.Config, path string, header render.Header, row render.Row) Env {
 	env := k8sEnv(c)
-	log.Debug().Msgf("PATH %q::%q", path, row.Fields[1])
 	env["NAMESPACE"], env["NAME"] = client.Namespaced(path)
 	for _, col := range header.Columns(true) {
 		env["COL-"+col] = row.Fields[header.IndexOf(col, true)]
@@ -59,24 +60,15 @@ func defaultEnv(c *client.Config, path string, header render.Header, row render.
 	return env
 }
 
-func describeResource(app *App, model ui.Tabular, gvr, path string) {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, internal.KeyFactory, app.factory)
-
-	yaml, err := model.Describe(ctx, path)
-	if err != nil {
-		app.Flash().Errf("Describe command failed: %s", err)
-		return
-	}
-
-	details := NewDetails(app, "Describe", path, true).Update(yaml)
-	if err := app.inject(details); err != nil {
+func describeResource(app *App, m ui.Tabular, gvr, path string) {
+	v := NewLiveView(app, "Describe", model.NewDescribe(client.NewGVR(gvr), path))
+	if err := app.inject(v); err != nil {
 		app.Flash().Err(err)
 	}
 }
 
 func showPodsWithLabels(app *App, path string, sel map[string]string) {
-	var labels []string
+	labels := make([]string, 0, len(sel))
 	for k, v := range sel {
 		labels = append(labels, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -84,7 +76,10 @@ func showPodsWithLabels(app *App, path string, sel map[string]string) {
 }
 
 func showPods(app *App, path, labelSel, fieldSel string) {
-	app.switchNS(client.AllNamespaces)
+	if err := app.switchNS(client.AllNamespaces); err != nil {
+		app.Flash().Err(err)
+		return
+	}
 
 	v := NewPod(client.NewGVR("v1/pods"))
 	v.SetContextFn(podCtx(app, path, labelSel, fieldSel))
@@ -173,4 +168,41 @@ func fqn(ns, n string) string {
 		return n
 	}
 	return ns + "/" + n
+}
+
+func decorateCpuMemHeaderRows(app *App, data render.TableData) render.TableData {
+	for colIndex, header := range data.Header {
+		check := ""
+		if header.Name == "%CPU/L" {
+			check = "cpu"
+		}
+		if header.Name == "%MEM/L" {
+			check = "memory"
+		}
+		if len(check) == 0 {
+			continue
+		}
+		for _, re := range data.RowEvents {
+			if re.Row.Fields[colIndex] == render.NAValue {
+				continue
+			}
+			n, err := strconv.Atoi(re.Row.Fields[colIndex])
+			if err != nil {
+				continue
+			}
+			if n > 100 {
+				n = 100
+			}
+			severity := app.Config.K9s.Thresholds.LevelFor(check, n)
+			if severity == config.SeverityLow {
+				continue
+			}
+			color := app.Config.K9s.Thresholds.SeverityColor(check, n)
+			if len(color) > 0 {
+				re.Row.Fields[colIndex] = "[" + color + "::b]" + re.Row.Fields[colIndex]
+			}
+		}
+	}
+
+	return data
 }

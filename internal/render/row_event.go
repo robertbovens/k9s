@@ -42,8 +42,8 @@ func NewRowEvent(kind ResEvent, row Row) RowEvent {
 	}
 }
 
-// NewDeltaRowEvent returns a new row event with deltas.
-func NewDeltaRowEvent(row Row, delta DeltaRow) RowEvent {
+// NewRowEventWithDeltas returns a new row event with deltas.
+func NewRowEventWithDeltas(row Row, delta DeltaRow) RowEvent {
 	return RowEvent{
 		Kind:   EventUpdate,
 		Row:    row,
@@ -75,6 +75,21 @@ func (r RowEvent) Customize(cols []int) RowEvent {
 	}
 }
 
+// ExtractHeaderLabels extract collection of fields into header.
+func (r RowEvent) ExtractHeaderLabels(labelCol int) []string {
+	hh, _ := sortLabels(labelize(r.Row.Fields[labelCol]))
+	return hh
+}
+
+// Labelize returns a new row event based on labels.
+func (r RowEvent) Labelize(cols []int, labelCol int, labels []string) RowEvent {
+	return RowEvent{
+		Kind:   r.Kind,
+		Deltas: r.Deltas.Labelize(cols, labelCol),
+		Row:    r.Row.Labelize(cols, labelCol, labels),
+	}
+}
+
 // Diff returns true if the row changed.
 func (r RowEvent) Diff(re RowEvent, ageCol int) bool {
 	if r.Kind != re.Kind {
@@ -90,6 +105,26 @@ func (r RowEvent) Diff(re RowEvent, ageCol int) bool {
 
 // RowEvents a collection of row events.
 type RowEvents []RowEvent
+
+// ExtractHeaderLabels extract header labels.
+func (r RowEvents) ExtractHeaderLabels(labelCol int) []string {
+	ll := make([]string, 0, 10)
+	for _, re := range r {
+		ll = append(ll, re.ExtractHeaderLabels(labelCol)...)
+	}
+
+	return ll
+}
+
+// Labelize converts labels into a row event.
+func (r RowEvents) Labelize(cols []int, labelCol int, labels []string) RowEvents {
+	out := make(RowEvents, 0, len(r))
+	for _, re := range r {
+		out = append(out, re.Labelize(cols, labelCol, labels))
+	}
+
+	return out
+}
 
 // Customize returns custom row events based on columns layout.
 func (r RowEvents) Customize(cols []int) RowEvents {
@@ -161,12 +196,19 @@ func (r RowEvents) FindIndex(id string) (int, bool) {
 }
 
 // Sort rows based on column index and order.
-func (r RowEvents) Sort(ns string, sortCol int, ageCol bool, asc bool) {
+func (r RowEvents) Sort(ns string, sortCol int, ageCol, numCol, asc bool) {
 	if sortCol == -1 {
 		return
 	}
 
-	t := RowEventSorter{NS: ns, Events: r, Index: sortCol, Asc: asc}
+	t := RowEventSorter{
+		NS:         ns,
+		Events:     r,
+		Index:      sortCol,
+		Asc:        asc,
+		IsNumber:   numCol,
+		IsDuration: ageCol,
+	}
 	sort.Sort(t)
 
 	iids, fields := map[string][]string{}, make(StringSet, 0, len(r))
@@ -192,10 +234,12 @@ func (r RowEvents) Sort(ns string, sortCol int, ageCol bool, asc bool) {
 
 // RowEventSorter sorts row events by a given colon.
 type RowEventSorter struct {
-	Events RowEvents
-	Index  int
-	NS     string
-	Asc    bool
+	Events     RowEvents
+	Index      int
+	NS         string
+	IsNumber   bool
+	IsDuration bool
+	Asc        bool
 }
 
 func (r RowEventSorter) Len() int {
@@ -208,7 +252,7 @@ func (r RowEventSorter) Swap(i, j int) {
 
 func (r RowEventSorter) Less(i, j int) bool {
 	f1, f2 := r.Events[i].Row.Fields, r.Events[j].Row.Fields
-	return Less(r.Asc, f1[r.Index], f2[r.Index])
+	return Less(r.Asc, r.IsNumber, r.IsDuration, f1[r.Index], f2[r.Index])
 }
 
 // ----------------------------------------------------------------------------

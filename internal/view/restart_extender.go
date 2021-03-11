@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/k9s/internal/ui/dialog"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 )
 
 // RestartExtender represents a restartable resource.
@@ -20,13 +19,16 @@ type RestartExtender struct {
 // NewRestartExtender returns a new extender.
 func NewRestartExtender(v ResourceViewer) ResourceViewer {
 	r := RestartExtender{ResourceViewer: v}
-	r.bindKeys(v.Actions())
+	v.AddBindKeysFn(r.bindKeys)
 
 	return &r
 }
 
 // BindKeys creates additional menu actions.
 func (r *RestartExtender) bindKeys(aa ui.KeyActions) {
+	if r.App().Config.K9s.IsReadOnly() {
+		return
+	}
 	aa.Add(ui.KeyActions{
 		tcell.KeyCtrlT: ui.NewKeyAction("Restart", r.restartCmd, true),
 	})
@@ -44,8 +46,8 @@ func (r *RestartExtender) restartCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if len(paths) > 1 {
 		msg = fmt.Sprintf("Restart %d deployments?", len(paths))
 	}
-	dialog.ShowConfirm(r.App().Content.Pages, "Confirm Restart", msg, func() {
-		ctx, cancel := context.WithTimeout(context.Background(), client.CallTimeout)
+	dialog.ShowConfirm(r.App().Styles.Dialog(), r.App().Content.Pages, "Confirm Restart", msg, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), r.App().Conn().Config().CallTimeout())
 		defer cancel()
 		for _, path := range paths {
 			if err := r.restartRollout(ctx, path); err != nil {

@@ -1,11 +1,21 @@
 package view
 
 import (
-	"fmt"
 	"sync/atomic"
 
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/tview"
+)
+
+const (
+	autoscroll = "Autoscroll"
+	fullscreen = "FullScreen"
+	timestamp  = "Timestamps"
+	wrap       = "Wrap"
+	on         = "On"
+	off        = "Off"
+	spacer     = "     "
+	bold       = "[::b]"
 )
 
 // LogIndicator represents a log view indicator.
@@ -93,19 +103,18 @@ func (l *LogIndicator) ToggleAutoScroll() {
 // Refresh updates the view.
 func (l *LogIndicator) Refresh() {
 	l.Clear()
-	l.update("Autoscroll: " + l.onOff(l.AutoScroll()))
-	l.update("FullScreen: " + l.onOff(l.fullScreen))
-	l.update("Timestamps: " + l.onOff(l.showTime))
-	l.update("Wrap: " + l.onOff(l.textWrap))
+	l.update(autoscroll, l.AutoScroll(), spacer)
+	l.update(fullscreen, l.fullScreen, spacer)
+	l.update(timestamp, l.showTime, spacer)
+	l.update(wrap, l.textWrap, "")
 }
 
-func (l *LogIndicator) onOff(b bool) string {
-	if b {
-		return "On"
+func (l *LogIndicator) update(title string, state bool, padding string) {
+	bb := []byte(bold + title + ":")
+	if state {
+		bb = append(bb, []byte(on)...)
+	} else {
+		bb = append(bb, []byte(off)...)
 	}
-	return "Off"
-}
-
-func (l *LogIndicator) update(status string) {
-	fmt.Fprintf(l, "[::b]%-20s", status)
+	_, _ = l.Write(append(bb, []byte(padding)...))
 }

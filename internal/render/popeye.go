@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/derailed/k9s/internal/client"
+
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -41,10 +43,10 @@ func (Popeye) Header(ns string) Header {
 		HeaderColumn{Name: "RESOURCE"},
 		HeaderColumn{Name: "SCORE%", Align: tview.AlignRight},
 		HeaderColumn{Name: "SCANNED", Align: tview.AlignRight},
-		HeaderColumn{Name: "OK", Align: tview.AlignRight},
-		HeaderColumn{Name: "INFO", Align: tview.AlignRight},
-		HeaderColumn{Name: "WARNING", Align: tview.AlignRight},
 		HeaderColumn{Name: "ERROR", Align: tview.AlignRight},
+		HeaderColumn{Name: "WARNING", Align: tview.AlignRight},
+		HeaderColumn{Name: "INFO", Align: tview.AlignRight},
+		HeaderColumn{Name: "OK", Align: tview.AlignRight},
 	}
 }
 
@@ -55,15 +57,15 @@ func (Popeye) Render(o interface{}, ns string, r *Row) error {
 		return fmt.Errorf("expected Section, but got %T", o)
 	}
 
-	r.ID = s.Title
+	r.ID = client.FQN(ns, s.Title)
 	r.Fields = append(r.Fields,
 		s.Title,
 		strconv.Itoa(s.Tally.Score()),
 		strconv.Itoa(s.Tally.OK+s.Tally.Info+s.Tally.Warning+s.Tally.Error),
-		strconv.Itoa(s.Tally.OK),
-		strconv.Itoa(s.Tally.Info),
-		strconv.Itoa(s.Tally.Warning),
 		strconv.Itoa(s.Tally.Error),
+		strconv.Itoa(s.Tally.Warning),
+		strconv.Itoa(s.Tally.Info),
+		strconv.Itoa(s.Tally.OK),
 	)
 	return nil
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -20,7 +20,7 @@ type Table struct {
 	app        *App
 	enterFn    EnterFunc
 	envFn      EnvFunc
-	bindKeysFn BindKeysFunc
+	bindKeysFn []BindKeysFunc
 }
 
 // NewTable returns a new viewer.
@@ -73,8 +73,10 @@ func (t *Table) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 // Name returns the table name.
 func (t *Table) Name() string { return t.GVR().R() }
 
-// SetBindKeysFn adds additional key bindings.
-func (t *Table) SetBindKeysFn(f BindKeysFunc) { t.bindKeysFn = f }
+// AddBindKeysFn adds additional key bindings.
+func (t *Table) AddBindKeysFn(f BindKeysFunc) {
+	t.bindKeysFn = append(t.bindKeysFn, f)
+}
 
 // SetEnvFn sets a function to pull viewer env vars for plugins.
 func (t *Table) SetEnvFn(f EnvFunc) { t.envFn = f }
@@ -125,10 +127,15 @@ func (t *Table) SetEnterFn(f EnterFunc) {
 // SetExtraActionsFn specifies custom keyboard behavior.
 func (t *Table) SetExtraActionsFn(BoostActionsFunc) {}
 
-// BufferChanged indicates the buffer was changed.
-func (t *Table) BufferChanged(s string) {
-	t.Filter(s)
+// BufferCompleted indicates input was accepted.
+func (t *Table) BufferCompleted(s string) {
+	t.app.QueueUpdateDraw(func() {
+		t.Filter(s)
+	})
 }
+
+// BufferChanged indicates the buffer was changed.
+func (t *Table) BufferChanged(s string) {}
 
 // BufferActive indicates the buff activity changed.
 func (t *Table) BufferActive(state bool, k model.BufferKind) {
@@ -150,26 +157,26 @@ func (t *Table) saveCmd(evt *tcell.EventKey) *tcell.EventKey {
 
 func (t *Table) bindKeys() {
 	t.Actions().Add(ui.KeyActions{
-		ui.KeySpace:        ui.NewSharedKeyAction("Mark", t.markCmd, false),
-		tcell.KeyCtrlSpace: ui.NewSharedKeyAction("Marks Clear", t.clearMarksCmd, false),
-		tcell.KeyCtrlS:     ui.NewSharedKeyAction("Save", t.saveCmd, false),
-		ui.KeySlash:        ui.NewSharedKeyAction("Filter Mode", t.activateCmd, false),
-		tcell.KeyCtrlZ:     ui.NewKeyAction("Toggle Faults", t.toggleFaultCmd, false),
-		tcell.KeyCtrlW:     ui.NewKeyAction("Show Wide", t.toggleWideCmd, false),
-		ui.KeyShiftN:       ui.NewKeyAction("Sort Name", t.SortColCmd(nameCol, true), false),
-		ui.KeyShiftA:       ui.NewKeyAction("Sort Age", t.SortColCmd(ageCol, true), false),
+		ui.KeyHelp:             ui.NewKeyAction("Help", t.App().helpCmd, true),
+		ui.KeySpace:            ui.NewSharedKeyAction("Mark", t.markCmd, false),
+		tcell.KeyCtrlSpace:     ui.NewSharedKeyAction("Mark Range", t.markSpanCmd, false),
+		tcell.KeyCtrlBackslash: ui.NewSharedKeyAction("Marks Clear", t.clearMarksCmd, false),
+		tcell.KeyCtrlS:         ui.NewSharedKeyAction("Save", t.saveCmd, false),
+		ui.KeySlash:            ui.NewSharedKeyAction("Filter Mode", t.activateCmd, false),
+		tcell.KeyCtrlZ:         ui.NewKeyAction("Toggle Faults", t.toggleFaultCmd, false),
+		tcell.KeyCtrlW:         ui.NewKeyAction("Toggle Wide", t.toggleWideCmd, false),
+		ui.KeyShiftN:           ui.NewKeyAction("Sort Name", t.SortColCmd(nameCol, true), false),
+		ui.KeyShiftA:           ui.NewKeyAction("Sort Age", t.SortColCmd(ageCol, true), false),
 	})
 }
 
 func (t *Table) toggleFaultCmd(evt *tcell.EventKey) *tcell.EventKey {
 	t.ToggleToast()
-
 	return nil
 }
 
 func (t *Table) toggleWideCmd(evt *tcell.EventKey) *tcell.EventKey {
 	t.ToggleWide()
-
 	return nil
 }
 
@@ -190,22 +197,22 @@ func (t *Table) cpCmd(evt *tcell.EventKey) *tcell.EventKey {
 }
 
 func (t *Table) markCmd(evt *tcell.EventKey) *tcell.EventKey {
-	path := t.GetSelectedItem()
-	if path == "" {
-		return evt
-	}
 	t.ToggleMark()
 	t.Refresh()
 
 	return nil
 }
 
+func (t *Table) markSpanCmd(evt *tcell.EventKey) *tcell.EventKey {
+	t.SpanMark()
+	t.Refresh()
+
+	return nil
+}
+
 func (t *Table) clearMarksCmd(evt *tcell.EventKey) *tcell.EventKey {
-	path := t.GetSelectedItem()
-	if path == "" {
-		return evt
-	}
 	t.ClearMarks()
+	t.Refresh()
 
 	return nil
 }
@@ -216,5 +223,5 @@ func (t *Table) activateCmd(evt *tcell.EventKey) *tcell.EventKey {
 	}
 	t.App().ResetPrompt(t.CmdBuff())
 
-	return nil
+	return evt
 }

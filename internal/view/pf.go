@@ -13,7 +13,7 @@ import (
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -32,11 +32,11 @@ func NewPortForward(gvr client.GVR) ResourceViewer {
 		ResourceViewer: NewBrowser(gvr),
 	}
 	p.GetTable().SetBorderFocusColor(tcell.ColorDodgerBlue)
-	p.GetTable().SetSelectedStyle(tcell.ColorWhite, tcell.ColorDodgerBlue, tcell.AttrNone)
+	p.GetTable().SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDodgerBlue).Attributes(tcell.AttrNone))
 	p.GetTable().SetColorerFn(render.PortForward{}.ColorerFunc())
 	p.GetTable().SetSortCol(ageCol, true)
 	p.SetContextFn(p.portForwardContext)
-	p.SetBindKeysFn(p.bindKeys)
+	p.AddBindKeysFn(p.bindKeys)
 
 	return &p
 }
@@ -56,11 +56,23 @@ func (p *PortForward) bindKeys(aa ui.KeyActions) {
 }
 
 func (p *PortForward) showBenchCmd(evt *tcell.EventKey) *tcell.EventKey {
-	if err := p.App().inject(NewBenchmark(client.NewGVR("benchmarks"))); err != nil {
+	b := NewBenchmark(client.NewGVR("benchmarks"))
+	b.SetContextFn(p.getContext)
+	if err := p.App().inject(b); err != nil {
 		p.App().Flash().Err(err)
 	}
 
 	return nil
+}
+
+func (p *PortForward) getContext(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, internal.KeyDir, benchDir(p.App().Config))
+	path := p.GetTable().GetSelectedItem()
+	if path == "" {
+		return ctx
+	}
+
+	return context.WithValue(ctx, internal.KeyPath, path)
 }
 
 func (p *PortForward) toggleBenchCmd(evt *tcell.EventKey) *tcell.EventKey {
@@ -79,7 +91,12 @@ func (p *PortForward) toggleBenchCmd(evt *tcell.EventKey) *tcell.EventKey {
 	cfg.Name = path
 
 	r, _ := p.GetTable().GetSelection()
-	base := ui.TrimCell(p.GetTable().SelectTable, r, 4)
+	log.Debug().Msgf("PF NS %q", p.GetTable().GetModel().GetNamespace())
+	col := 3
+	if client.IsAllNamespaces(p.GetTable().GetModel().GetNamespace()) {
+		col = 4
+	}
+	base := ui.TrimCell(p.GetTable().SelectTable, r, col)
 	var err error
 	p.bench, err = perf.NewBenchmark(base, p.App().version, cfg)
 	if err != nil {

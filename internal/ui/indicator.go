@@ -9,7 +9,7 @@ import (
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 )
 
 // StatusIndicator represents a status indicator when main header is collapsed.
@@ -64,6 +64,9 @@ func (s *StatusIndicator) ClusterInfoUpdated(data model.ClusterMeta) {
 
 // ClusterInfoChanged notifies the cluster meta was changed.
 func (s *StatusIndicator) ClusterInfoChanged(prev, cur model.ClusterMeta) {
+	if !s.app.IsRunning() {
+		return
+	}
 	s.app.QueueUpdateDraw(func() {
 		s.SetPermanent(fmt.Sprintf(
 			statusIndicatorFmt,
@@ -133,9 +136,5 @@ func (s *StatusIndicator) setText(msg string) {
 // AsPercDelta represents a percentage with a delta indicator.
 func AsPercDelta(ov, nv int) string {
 	prev, cur := render.IntToStr(ov), render.IntToStr(nv)
-	if cur == "0" {
-		return render.NAValue
-	}
-
 	return cur + "%" + Deltas(prev, cur)
 }

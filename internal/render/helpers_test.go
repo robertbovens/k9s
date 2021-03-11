@@ -9,6 +9,49 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestSortLabels(t *testing.T) {
+	uu := map[string]struct {
+		labels string
+		e      [][]string
+	}{
+		"simple": {
+			labels: "a=b,c=d",
+			e: [][]string{
+				{"a", "c"},
+				{"b", "d"},
+			},
+		},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			hh, vv := sortLabels(labelize(u.labels))
+			assert.Equal(t, u.e[0], hh)
+			assert.Equal(t, u.e[1], vv)
+		})
+	}
+}
+
+func TestLabelize(t *testing.T) {
+	uu := map[string]struct {
+		labels string
+		e      map[string]string
+	}{
+		"simple": {
+			labels: "a=b,c=d",
+			e:      map[string]string{"a": "b", "c": "d"},
+		},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			assert.Equal(t, u.e, labelize(u.labels))
+		})
+	}
+}
+
 func TestDurationToNumber(t *testing.T) {
 	uu := map[string]struct {
 		s, e string
@@ -318,18 +361,18 @@ func BenchmarkMapToStr(b *testing.B) {
 	}
 }
 
-func TestToMillicore(t *testing.T) {
+func TestToMc(t *testing.T) {
 	uu := []struct {
 		v int64
 		e string
 	}{
 		{0, "0"},
 		{2, "2"},
-		{1000, "1000"},
+		{1_000, "1000"},
 	}
 
 	for _, u := range uu {
-		assert.Equal(t, u.e, ToMillicore(u.v))
+		assert.Equal(t, u.e, toMc(u.v))
 	}
 }
 
@@ -339,12 +382,12 @@ func TestToMi(t *testing.T) {
 		e string
 	}{
 		{0, "0"},
-		{2, "2"},
-		{1000, "1000"},
+		{2 * client.MegaByte, "2"},
+		{1_000 * client.MegaByte, "1000"},
 	}
 
 	for _, u := range uu {
-		assert.Equal(t, u.e, ToMi(u.v))
+		assert.Equal(t, u.e, toMi(u.v))
 	}
 }
 

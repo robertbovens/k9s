@@ -12,7 +12,7 @@ import (
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/fatih/color"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -27,16 +27,31 @@ type Pod struct {
 
 // NewPod returns a new viewer.
 func NewPod(gvr client.GVR) ResourceViewer {
-	p := Pod{
-		ResourceViewer: NewPortForwardExtender(
-			NewLogsExtender(NewBrowser(gvr), nil),
+	p := Pod{}
+	p.ResourceViewer = NewPortForwardExtender(
+		NewImageExtender(
+			NewLogsExtender(NewBrowser(gvr), p.selectedContainer),
 		),
-	}
-	p.SetBindKeysFn(p.bindKeys)
+	)
+	p.AddBindKeysFn(p.bindKeys)
 	p.GetTable().SetEnterFn(p.showContainers)
 	p.GetTable().SetColorerFn(render.Pod{}.ColorerFunc())
+	p.GetTable().SetDecorateFn(p.portForwardIndicator)
 
 	return &p
+}
+
+func (p *Pod) portForwardIndicator(data render.TableData) render.TableData {
+	ff := p.App().factory.Forwarders()
+
+	col := data.IndexOfHeader("PF")
+	for _, re := range data.RowEvents {
+		if ff.IsPodForwarded(re.Row.ID) {
+			re.Row.Fields[col] = "[orange::b]Ⓕ"
+		}
+	}
+
+	return decorateCpuMemHeaderRows(p.App(), data)
 }
 
 func (p *Pod) bindDangerousKeys(aa ui.KeyActions) {
@@ -48,23 +63,36 @@ func (p *Pod) bindDangerousKeys(aa ui.KeyActions) {
 }
 
 func (p *Pod) bindKeys(aa ui.KeyActions) {
-	if !p.App().Config.K9s.GetReadOnly() {
+	if !p.App().Config.K9s.IsReadOnly() {
 		p.bindDangerousKeys(aa)
 	}
 
 	aa.Add(ui.KeyActions{
-		ui.KeyShiftR:   ui.NewKeyAction("Sort Ready", p.GetTable().SortColCmd(readyCol, true), false),
-		ui.KeyShiftT:   ui.NewKeyAction("Sort Restart", p.GetTable().SortColCmd("RESTARTS", false), false),
-		ui.KeyShiftS:   ui.NewKeyAction("Sort Status", p.GetTable().SortColCmd(statusCol, true), false),
-		ui.KeyShiftC:   ui.NewKeyAction("Sort CPU", p.GetTable().SortColCmd(cpuCol, false), false),
-		ui.KeyShiftM:   ui.NewKeyAction("Sort MEM", p.GetTable().SortColCmd(memCol, false), false),
-		ui.KeyShiftX:   ui.NewKeyAction("Sort %CPU (REQ)", p.GetTable().SortColCmd("%CPU", false), false),
-		ui.KeyShiftZ:   ui.NewKeyAction("Sort %MEM (REQ)", p.GetTable().SortColCmd("%MEM", false), false),
-		tcell.KeyCtrlX: ui.NewKeyAction("Sort %CPU (LIM)", p.GetTable().SortColCmd("%CPU/L", false), false),
-		tcell.KeyCtrlQ: ui.NewKeyAction("Sort %MEM (LIM)", p.GetTable().SortColCmd("%MEM/L", false), false),
-		ui.KeyShiftI:   ui.NewKeyAction("Sort IP", p.GetTable().SortColCmd("IP", true), false),
-		ui.KeyShiftO:   ui.NewKeyAction("Sort Node", p.GetTable().SortColCmd("NODE", true), false),
+		ui.KeyF:      ui.NewKeyAction("Show PortForward", p.showPFCmd, true),
+		ui.KeyShiftR: ui.NewKeyAction("Sort Ready", p.GetTable().SortColCmd(readyCol, true), false),
+		ui.KeyShiftT: ui.NewKeyAction("Sort Restart", p.GetTable().SortColCmd("RESTARTS", false), false),
+		ui.KeyShiftS: ui.NewKeyAction("Sort Status", p.GetTable().SortColCmd(statusCol, true), false),
+		ui.KeyShiftI: ui.NewKeyAction("Sort IP", p.GetTable().SortColCmd("IP", true), false),
+		ui.KeyShiftO: ui.NewKeyAction("Sort Node", p.GetTable().SortColCmd("NODE", true), false),
 	})
+	aa.Add(resourceSorters(p.GetTable()))
+}
+
+func (p *Pod) selectedContainer() string {
+	path := p.GetTable().GetSelectedItem()
+	if path == "" {
+		return ""
+	}
+
+	cc, err := fetchContainers(p.App().factory, path, true)
+	if err != nil {
+		log.Error().Err(err).Msgf("Fetch containers")
+		return ""
+	}
+	if len(cc) == 1 {
+		return cc[0]
+	}
+	return ""
 }
 
 func (p *Pod) showContainers(app *App, model ui.Tabular, gvr, path string) {
@@ -79,11 +107,35 @@ func (p *Pod) coContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, internal.KeyPath, p.GetTable().GetSelectedItem())
 }
 
-// Commands...
+// Handlers...
+
+func (p *Pod) showPFCmd(evt *tcell.EventKey) *tcell.EventKey {
+	path := p.GetTable().GetSelectedItem()
+	if path == "" {
+		return evt
+	}
+
+	if !p.App().factory.Forwarders().IsPodForwarded(path) {
+		p.App().Flash().Errf("no portforwards defined")
+		return nil
+	}
+	pf := NewPortForward(client.NewGVR("portforwards"))
+	pf.SetContextFn(p.portForwardContext)
+	if err := p.App().inject(pf); err != nil {
+		p.App().Flash().Err(err)
+	}
+
+	return nil
+}
+
+func (p *Pod) portForwardContext(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, internal.KeyBenchCfg, p.App().BenchFile)
+	return context.WithValue(ctx, internal.KeyPath, p.GetTable().GetSelectedItem())
+}
 
 func (p *Pod) killCmd(evt *tcell.EventKey) *tcell.EventKey {
-	sels := p.GetTable().GetSelectedItems()
-	if len(sels) == 0 {
+	selections := p.GetTable().GetSelectedItems()
+	if len(selections) == 0 {
 		return evt
 	}
 
@@ -97,14 +149,20 @@ func (p *Pod) killCmd(evt *tcell.EventKey) *tcell.EventKey {
 		p.App().Flash().Err(fmt.Errorf("expecting a nuker for %q", p.GVR()))
 		return nil
 	}
+	if len(selections) > 1 {
+		p.App().Flash().Infof("Delete %d marked %s", len(selections), p.GVR())
+	} else {
+		p.App().Flash().Infof("Delete resource %s %s", p.GVR(), selections[0])
+	}
 	p.GetTable().ShowDeleted()
-	for _, res := range sels {
-		p.App().Flash().Infof("Delete resource %s -- %s", p.GVR(), res)
-		if err := nuker.Delete(res, true, true); err != nil {
+	log.Debug().Msgf("SELS %v", selections)
+	for _, path := range selections {
+		if err := nuker.Delete(path, true, true); err != nil {
 			p.App().Flash().Errf("Delete failed with %s", err)
 		} else {
-			p.App().factory.DeleteForwarder(res)
+			p.App().factory.DeleteForwarder(path)
 		}
+		p.GetTable().DeleteMark(path)
 	}
 	p.Refresh()
 
@@ -184,7 +242,7 @@ func resumeShellIn(a *App, c model.Component, path, co string) {
 }
 
 func shellIn(a *App, path, co string) {
-	args := computeShellArgs(path, co, a.Config.K9s.CurrentContext, a.Conn().Config().Flags().KubeConfig)
+	args := computeShellArgs(path, co, a.Conn().Config().Flags().KubeConfig)
 
 	c := color.New(color.BgGreen).Add(color.FgBlack).Add(color.Bold)
 	if !runK(a, shellOpts{clear: true, banner: c.Sprintf(bannerFmt, path, co), args: args}) {
@@ -226,24 +284,25 @@ func resumeAttachIn(a *App, c model.Component, path, co string) {
 }
 
 func attachIn(a *App, path, co string) {
-	args := buildShellArgs("attach", path, co, a.Config.K9s.CurrentContext, a.Conn().Config().Flags().KubeConfig)
+	args := buildShellArgs("attach", path, co, a.Conn().Config().Flags().KubeConfig)
 	c := color.New(color.BgGreen).Add(color.FgBlack).Add(color.Bold)
 	if !runK(a, shellOpts{clear: true, banner: c.Sprintf(bannerFmt, path, co), args: args}) {
 		a.Flash().Err(errors.New("Attach exec failed"))
 	}
 }
 
-func computeShellArgs(path, co, context string, kcfg *string) []string {
-	args := buildShellArgs("exec", path, co, context, kcfg)
+func computeShellArgs(path, co string, kcfg *string) []string {
+	args := buildShellArgs("exec", path, co, kcfg)
 	return append(args, "--", "sh", "-c", shellCheck)
 }
 
-func buildShellArgs(cmd, path, co, context string, kcfg *string) []string {
+func buildShellArgs(cmd, path, co string, kcfg *string) []string {
 	args := make([]string, 0, 15)
 	args = append(args, cmd, "-it")
-	args = append(args, "--context", context)
 	ns, po := client.Namespaced(path)
-	args = append(args, "-n", ns)
+	if ns != client.AllNamespaces {
+		args = append(args, "-n", ns)
+	}
 	args = append(args, po)
 	if kcfg != nil && *kcfg != "" {
 		args = append(args, "--kubeconfig", *kcfg)
@@ -298,6 +357,16 @@ func podIsRunning(f dao.Factory, path string) bool {
 	}
 
 	var re render.Pod
-	log.Debug().Msgf("Phase %#v", re.Phase(po))
 	return re.Phase(po) == render.Running
+}
+
+func resourceSorters(t *Table) ui.KeyActions {
+	return ui.KeyActions{
+		ui.KeyShiftC:   ui.NewKeyAction("Sort CPU", t.SortColCmd(cpuCol, false), false),
+		ui.KeyShiftM:   ui.NewKeyAction("Sort MEM", t.SortColCmd(memCol, false), false),
+		ui.KeyShiftX:   ui.NewKeyAction("Sort CPU/R", t.SortColCmd("%CPU/R", false), false),
+		ui.KeyShiftZ:   ui.NewKeyAction("Sort MEM/R", t.SortColCmd("%MEM/R", false), false),
+		tcell.KeyCtrlX: ui.NewKeyAction("Sort CPU/L", t.SortColCmd("%CPU/L", false), false),
+		tcell.KeyCtrlQ: ui.NewKeyAction("Sort MEM/L", t.SortColCmd("%MEM/L", false), false),
+	}
 }

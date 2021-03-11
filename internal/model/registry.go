@@ -10,11 +10,18 @@ import (
 // BOZO!! Break up deps and merge into single registrar
 var Registry = map[string]ResourceMeta{
 	// Custom...
-	// BOZO!! v1.18.0
-	// "charts": {
-	// 	DAO:      &dao.Chart{},
-	// 	Renderer: &render.Chart{},
-	// },
+	"references": {
+		DAO:      &dao.Reference{},
+		Renderer: &render.Reference{},
+	},
+	"dir": {
+		DAO:      &dao.Dir{},
+		Renderer: &render.Dir{},
+	},
+	"helm": {
+		DAO:      &dao.Helm{},
+		Renderer: &render.Helm{},
+	},
 	"pulses": {
 		DAO: &dao.Pulse{},
 	},

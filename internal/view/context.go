@@ -7,7 +7,7 @@ import (
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,7 +23,7 @@ func NewContext(gvr client.GVR) ResourceViewer {
 	}
 	c.GetTable().SetEnterFn(c.useCtx)
 	c.GetTable().SetColorerFn(render.Context{}.ColorerFunc())
-	c.SetBindKeysFn(c.bindKeys)
+	c.AddBindKeysFn(c.bindKeys)
 
 	return &c
 }
@@ -58,9 +58,6 @@ func useContext(app *App, name string) error {
 		log.Error().Err(err).Msgf("Context switch failed")
 		return err
 	}
-	if err := app.switchCtx(name, true); err != nil {
-		return err
-	}
 
-	return nil
+	return app.switchCtx(name, true)
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/k9s/internal/watch"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -26,10 +26,10 @@ type PortForwardExtender struct {
 
 // NewPortForwardExtender returns a new extender.
 func NewPortForwardExtender(r ResourceViewer) ResourceViewer {
-	s := PortForwardExtender{ResourceViewer: r}
-	s.bindKeys(s.Actions())
+	p := PortForwardExtender{ResourceViewer: r}
+	p.AddBindKeysFn(p.bindKeys)
 
-	return &s
+	return &p
 }
 
 func (p *PortForwardExtender) bindKeys(aa ui.KeyActions) {
@@ -47,6 +47,10 @@ func (p *PortForwardExtender) portFwdCmd(evt *tcell.EventKey) *tcell.EventKey {
 	pod, err := p.fetchPodName(path)
 	if err != nil {
 		p.App().Flash().Err(err)
+		return nil
+	}
+	if p.App().factory.Forwarders().IsPodForwarded(pod) {
+		p.App().Flash().Errf("A PortForward already exist for pod %s", pod)
 		return nil
 	}
 	if err := showFwdDialog(p, pod, startFwdCB); err != nil {
@@ -100,11 +104,13 @@ func runForward(v ResourceViewer, pf watch.Forwarder, f *portforward.PortForward
 	})
 }
 
-func startFwdCB(v ResourceViewer, path, co string, t client.PortTunnel) {
-	err := tryListenPort(t.Address, t.LocalPort)
-	if err != nil {
-		v.App().Flash().Err(err)
-		return
+func startFwdCB(v ResourceViewer, path, co string, tt []client.PortTunnel) {
+	for _, t := range tt {
+		err := tryListenPort(t.Address, t.LocalPort)
+		if err != nil {
+			v.App().Flash().Err(err)
+			return
+		}
 	}
 
 	if _, ok := v.App().factory.ForwarderFor(dao.PortForwardID(path, co)); ok {
@@ -113,20 +119,20 @@ func startFwdCB(v ResourceViewer, path, co string, t client.PortTunnel) {
 	}
 
 	pf := dao.NewPortForwarder(v.App().factory)
-	fwd, err := pf.Start(path, co, t)
+	fwd, err := pf.Start(path, co, tt)
 	if err != nil {
 		v.App().Flash().Err(err)
 		return
 	}
 
-	log.Debug().Msgf(">>> Starting port forward %q %#v", path, t)
+	log.Debug().Msgf(">>> Starting port forward %q %#v", path, tt)
 	go runForward(v, pf, fwd)
 }
 
 func showFwdDialog(v ResourceViewer, path string, cb PortForwardCB) error {
 	mm, err := fetchPodPorts(v.App().factory, path)
 	if err != nil {
-		return nil
+		return err
 	}
 	ports := make([]string, 0, len(mm))
 	for co, pp := range mm {
@@ -137,9 +143,6 @@ func showFwdDialog(v ResourceViewer, path string, cb PortForwardCB) error {
 			ports = append(ports, client.FQN(co, p.Name)+":"+strconv.Itoa(int(p.ContainerPort)))
 		}
 	}
-	if len(ports) == 0 {
-		return fmt.Errorf("no tcp ports found on %s", path)
-	}
 	ShowPortForwards(v, path, ports, cb)
 
 	return nil
@@ -147,7 +150,7 @@ func showFwdDialog(v ResourceViewer, path string, cb PortForwardCB) error {
 
 func fetchPodPorts(f *watch.Factory, path string) (map[string][]v1.ContainerPort, error) {
 	log.Debug().Msgf("Fetching ports on pod %q", path)
-	o, err := f.Get("v1/pods", path, false, labels.Everything())
+	o, err := f.Get("v1/pods", path, true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}

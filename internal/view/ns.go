@@ -7,7 +7,7 @@ import (
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,7 +29,7 @@ func NewNamespace(gvr client.GVR) ResourceViewer {
 	n.GetTable().SetDecorateFn(n.decorate)
 	n.GetTable().SetColorerFn(render.Namespace{}.ColorerFunc())
 	n.GetTable().SetEnterFn(n.switchNs)
-	n.SetBindKeysFn(n.bindKeys)
+	n.AddBindKeysFn(n.bindKeys)
 
 	return &n
 }
@@ -42,7 +42,7 @@ func (n *Namespace) bindKeys(aa ui.KeyActions) {
 
 func (n *Namespace) switchNs(app *App, model ui.Tabular, gvr, path string) {
 	n.useNamespace(path)
-	if err := app.gotoResource("pods", "", true); err != nil {
+	if err := app.gotoResource("pods", "", false); err != nil {
 		app.Flash().Err(err)
 	}
 }
@@ -59,13 +59,16 @@ func (n *Namespace) useNsCmd(evt *tcell.EventKey) *tcell.EventKey {
 
 func (n *Namespace) useNamespace(fqn string) {
 	_, ns := client.Namespaced(fqn)
-	log.Debug().Msgf("SWITCHING NS %q", ns)
-	n.App().switchNS(ns)
+	if err := n.App().switchNS(ns); err != nil {
+		n.App().Flash().Err(err)
+		return
+	}
 	if err := n.App().Config.SetActiveNamespace(ns); err != nil {
 		n.App().Flash().Err(err)
-	} else {
-		n.App().Flash().Infof("Namespace %s is now active!", ns)
+		return
 	}
+
+	n.App().Flash().Infof("Namespace %s is now active!", ns)
 	if err := n.App().Config.Save(); err != nil {
 		log.Error().Err(err).Msg("Config file save failed!")
 	}

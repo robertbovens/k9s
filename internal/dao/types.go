@@ -33,7 +33,7 @@ type Factory interface {
 	List(gvr, ns string, wait bool, sel labels.Selector) ([]runtime.Object, error)
 
 	// ForResource fetch an informer for a given resource.
-	ForResource(ns, gvr string) informers.GenericInformer
+	ForResource(ns, gvr string) (informers.GenericInformer, error)
 
 	// CanForResource fetch an informer for a given resource if authorized
 	CanForResource(ns, gvr string, verbs []string) (informers.GenericInformer, error)
@@ -102,7 +102,7 @@ type Describer interface {
 	Describe(path string) (string, error)
 
 	// ToYAML dumps a resource to YAML.
-	ToYAML(path string) (string, error)
+	ToYAML(path string, showManaged bool) (string, error)
 }
 
 // Scalable represents resources that can scale.
@@ -145,4 +145,13 @@ type Runnable interface {
 type Logger interface {
 	// Logs tails a resource logs.
 	Logs(path string, opts *v1.PodLogOptions) (*restclient.Request, error)
+}
+
+// ContainsPodSpec represents a resource with a pod template.
+type ContainsPodSpec interface {
+	// Get PodSpec of a resource
+	GetPodSpec(path string) (*v1.PodSpec, error)
+
+	// Set Images for a resource
+	SetImages(ctx context.Context, path string, imageSpecs ImageSpecs) error
 }

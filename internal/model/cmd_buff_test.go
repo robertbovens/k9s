@@ -17,6 +17,10 @@ func (l *testListener) BufferChanged(s string) {
 	l.text = s
 }
 
+func (l *testListener) BufferCompleted(s string) {
+	l.text = s
+}
+
 func (l *testListener) BufferActive(s bool, _ model.BufferKind) {
 	if s {
 		l.act++
@@ -62,7 +66,7 @@ func TestCmdBuffChanged(t *testing.T) {
 	assert.Equal(t, "", b.GetText())
 
 	b.Add('c')
-	b.ClearText()
+	b.ClearText(true)
 	assert.Equal(t, 0, l.act)
 	assert.Equal(t, 0, l.inact)
 	assert.Equal(t, "", l.text)

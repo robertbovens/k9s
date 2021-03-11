@@ -14,7 +14,7 @@ import (
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 )
 
 const (
@@ -56,9 +56,9 @@ func (h *Help) Init(ctx context.Context) error {
 }
 
 func (h *Help) bindKeys() {
-	h.Actions().Delete(ui.KeySpace, tcell.KeyCtrlSpace, tcell.KeyCtrlS)
+	h.Actions().Delete(ui.KeySpace, tcell.KeyCtrlSpace, tcell.KeyCtrlS, ui.KeySlash)
 	h.Actions().Set(ui.KeyActions{
-		tcell.KeyEscape: ui.NewKeyAction("Back", h.app.PrevCmd, false),
+		tcell.KeyEscape: ui.NewKeyAction("Back", h.app.PrevCmd, true),
 		ui.KeyHelp:      ui.NewKeyAction("Back", h.app.PrevCmd, false),
 		tcell.KeyEnter:  ui.NewKeyAction("Back", h.app.PrevCmd, false),
 	})
@@ -220,11 +220,11 @@ func (h *Help) showGeneral() model.MenuHints {
 		},
 		{
 			Mnemonic:    "tab",
-			Description: "Next Field",
+			Description: "Field Next",
 		},
 		{
 			Mnemonic:    "backtab",
-			Description: "Previous Field",
+			Description: "Field Previous",
 		},
 		{
 			Mnemonic:    "Ctrl-r",
@@ -232,14 +232,18 @@ func (h *Help) showGeneral() model.MenuHints {
 		},
 		{
 			Mnemonic:    "Ctrl-u",
-			Description: "Clear command",
+			Description: "Command Clear",
 		},
 		{
 			Mnemonic:    "Ctrl-e",
 			Description: "Toggle Header",
 		},
 		{
-			Mnemonic:    "q",
+			Mnemonic:    "Ctrl-g",
+			Description: "Toggle Crumbs",
+		},
+		{
+			Mnemonic:    ":q",
 			Description: "Quit",
 		},
 		{
@@ -248,7 +252,11 @@ func (h *Help) showGeneral() model.MenuHints {
 		},
 		{
 			Mnemonic:    "Ctrl-space",
-			Description: "Clear Marks",
+			Description: "Mark Range",
+		},
+		{
+			Mnemonic:    "Ctrl-\\",
+			Description: "Mark Clear",
 		},
 		{
 			Mnemonic:    "Ctrl-s",

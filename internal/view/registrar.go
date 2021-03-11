@@ -21,8 +21,8 @@ func loadCustomViewers() MetaViewers {
 }
 
 func helmViewers(vv MetaViewers) {
-	vv[client.NewGVR("charts")] = MetaViewer{
-		viewerFn: NewChart,
+	vv[client.NewGVR("helm")] = MetaViewer{
+		viewerFn: NewHelm,
 	}
 }
 
@@ -44,6 +44,15 @@ func coreViewers(vv MetaViewers) {
 	}
 	vv[client.NewGVR("v1/secrets")] = MetaViewer{
 		viewerFn: NewSecret,
+	}
+	vv[client.NewGVR("v1/configmaps")] = MetaViewer{
+		viewerFn: NewConfigMap,
+	}
+	vv[client.NewGVR("v1/serviceaccounts")] = MetaViewer{
+		viewerFn: NewServiceAccount,
+	}
+	vv[client.NewGVR("v1/persistentvolumeclaims")] = MetaViewer{
+		viewerFn: NewPersistentVolumeClaim,
 	}
 }
 
@@ -69,6 +78,9 @@ func miscViewers(vv MetaViewers) {
 	vv[client.NewGVR("aliases")] = MetaViewer{
 		viewerFn: NewAlias,
 	}
+	vv[client.NewGVR("references")] = MetaViewer{
+		viewerFn: NewReference,
+	}
 	vv[client.NewGVR("pulses")] = MetaViewer{
 		viewerFn: NewPulse,
 	}
@@ -78,7 +90,6 @@ func miscViewers(vv MetaViewers) {
 	vv[client.NewGVR("sanitizer")] = MetaViewer{
 		viewerFn: NewSanitizer,
 	}
-
 }
 
 func appsViewers(vv MetaViewers) {

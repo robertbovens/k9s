@@ -155,7 +155,7 @@ func (t *Tree) ToYAML(ctx context.Context, gvr, path string) (string, error) {
 		return "", fmt.Errorf("no describer for %q", meta.DAO.GVR())
 	}
 
-	return desc.ToYAML(path)
+	return desc.ToYAML(path, false)
 }
 
 func (t *Tree) updater(ctx context.Context) {
@@ -217,11 +217,8 @@ func (t *Tree) reconcile(ctx context.Context) error {
 		if err := genericTreeHydrate(ctx, ns, table, meta.TreeRenderer); err != nil {
 			return err
 		}
-	} else {
-		if err := treeHydrate(ctx, ns, oo, meta.TreeRenderer); err != nil {
-
-			return err
-		}
+	} else if err := treeHydrate(ctx, ns, oo, meta.TreeRenderer); err != nil {
+		return err
 	}
 
 	root.Sort()

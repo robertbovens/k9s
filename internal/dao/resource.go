@@ -22,10 +22,12 @@ type Resource struct {
 
 // List returns a collection of resources.
 func (r *Resource) List(ctx context.Context, ns string) ([]runtime.Object, error) {
-	strLabel, ok := ctx.Value(internal.KeyLabels).(string)
+	strLabel, _ := ctx.Value(internal.KeyLabels).(string)
 	lsel := labels.Everything()
-	if sel, err := labels.ConvertSelectorToLabelsMap(strLabel); ok && err == nil {
-		lsel = sel.AsSelector()
+	if strLabel != "" {
+		if sel, err := labels.Parse(strLabel); err == nil {
+			lsel = sel
+		}
 	}
 
 	return r.Factory.List(r.gvr.String(), ns, false, lsel)
@@ -37,13 +39,13 @@ func (r *Resource) Get(_ context.Context, path string) (runtime.Object, error) {
 }
 
 // ToYAML returns a resource yaml.
-func (r *Resource) ToYAML(path string) (string, error) {
+func (r *Resource) ToYAML(path string, showManaged bool) (string, error) {
 	o, err := r.Get(context.Background(), path)
 	if err != nil {
 		return "", err
 	}
 
-	raw, err := ToYAML(o)
+	raw, err := ToYAML(o, showManaged)
 	if err != nil {
 		return "", fmt.Errorf("unable to marshal resource %s", err)
 	}

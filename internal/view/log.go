@@ -7,8 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/atotto/clipboard"
 
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/color"
@@ -17,7 +20,7 @@ import (
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -26,15 +29,18 @@ const (
 	logMessage   = "Waiting for logs..."
 	logFmt       = " Logs([hilite:bg:]%s[-:bg:-])[[green:bg:b]%s[-:bg:-]] "
 	logCoFmt     = " Logs([hilite:bg:]%s:[hilite:bg:b]%s[-:bg:-])[[green:bg:b]%s[-:bg:-]] "
-	flushTimeout = 100 * time.Millisecond
+	flushTimeout = 1 * time.Millisecond
 )
+
+// InvalidCharsRX contains invalid filename characters.
+var invalidPathCharsRX = regexp.MustCompile(`[:/\\]+`)
 
 // Log represents a generic log viewer.
 type Log struct {
 	*tview.Flex
 
 	app        *App
-	logs       *Details
+	logs       *Logger
 	indicator  *LogIndicator
 	ansiWriter io.Writer
 	model      *model.Log
@@ -48,7 +54,7 @@ func NewLog(gvr client.GVR, path, co string, prev bool) *Log {
 		Flex: tview.NewFlex(),
 		model: model.NewLog(
 			gvr,
-			buildLogOpts(path, co, prev, true, config.DefaultLoggerTailCount),
+			buildLogOpts(path, co, prev, false, config.DefaultLoggerTailCount),
 			flushTimeout,
 		),
 	}
@@ -70,7 +76,7 @@ func (l *Log) Init(ctx context.Context) (err error) {
 	l.AddItem(l.indicator, 1, 1, false)
 	l.indicator.Refresh()
 
-	l.logs = NewDetails(l.app, "", "", false)
+	l.logs = NewLogger(l.app)
 	if err = l.logs.Init(ctx); err != nil {
 		return err
 	}
@@ -92,6 +98,8 @@ func (l *Log) Init(ctx context.Context) (err error) {
 	l.model.AddListener(l)
 	l.updateTitle()
 
+	l.model.ToggleShowTimestamp(l.app.Config.K9s.Logger.ShowTime)
+
 	return nil
 }
 
@@ -99,7 +107,6 @@ func (l *Log) Init(ctx context.Context) (err error) {
 func (l *Log) LogCleared() {
 	l.app.QueueUpdateDraw(func() {
 		l.logs.Clear()
-		l.logs.ScrollTo(0, 0)
 	})
 }
 
@@ -110,24 +117,27 @@ func (l *Log) LogFailed(err error) {
 		if l.logs.GetText(true) == logMessage {
 			l.logs.Clear()
 		}
-		fmt.Fprintln(l.ansiWriter, tview.Escape(color.Colorize(err.Error(), color.Red)))
+		if _, err = l.ansiWriter.Write([]byte(tview.Escape(color.Colorize(err.Error(), color.Red)))); err != nil {
+			log.Error().Err(err).Msgf("Writing log error")
+		}
 	})
 }
 
 // LogChanged updates the logs.
-func (l *Log) LogChanged(lines dao.LogItems) {
+func (l *Log) LogChanged(lines [][]byte) {
 	l.app.QueueUpdateDraw(func() {
 		l.Flush(lines)
 	})
 }
 
-// BufferChanged indicates the buffer was changed.
-func (l *Log) BufferChanged(s string) {
-	if err := l.model.Filter(l.logs.cmdBuff.GetText()); err != nil {
-		l.app.Flash().Err(err)
-	}
+// BufferCompleted indicates input was accepted.
+func (l *Log) BufferCompleted(s string) {
+	l.model.Filter(s)
 	l.updateTitle()
 }
+
+// BufferChanged indicates the buffer was changed.
+func (l *Log) BufferChanged(string) {}
 
 // BufferActive indicates the buff activity changed.
 func (l *Log) BufferActive(state bool, k model.BufferKind) {
@@ -175,20 +185,38 @@ func (l *Log) Name() string { return logTitle }
 
 func (l *Log) bindKeys() {
 	l.logs.Actions().Set(ui.KeyActions{
-		ui.Key0:        ui.NewKeyAction("all", l.sinceCmd(-1), true),
-		ui.Key1:        ui.NewKeyAction("1m", l.sinceCmd(60), true),
-		ui.Key2:        ui.NewKeyAction("5m", l.sinceCmd(5*60), true),
-		ui.Key3:        ui.NewKeyAction("15m", l.sinceCmd(15*60), true),
-		ui.Key4:        ui.NewKeyAction("30m", l.sinceCmd(30*60), true),
-		ui.Key5:        ui.NewKeyAction("1h", l.sinceCmd(60*60), true),
-		tcell.KeyEnter: ui.NewSharedKeyAction("Filter", l.filterCmd, false),
-		ui.KeyC:        ui.NewKeyAction("Clear", l.clearCmd, true),
-		ui.KeyS:        ui.NewKeyAction("Toggle AutoScroll", l.toggleAutoScrollCmd, true),
-		ui.KeyF:        ui.NewKeyAction("Toggle FullScreen", l.toggleFullScreenCmd, true),
-		ui.KeyT:        ui.NewKeyAction("Toggle Timestamp", l.toggleTimestampCmd, true),
-		ui.KeyW:        ui.NewKeyAction("Toggle Wrap", l.toggleTextWrapCmd, true),
-		tcell.KeyCtrlS: ui.NewKeyAction("Save", l.SaveCmd, true),
+		ui.Key0:         ui.NewKeyAction("all", l.sinceCmd(-1), true),
+		ui.Key1:         ui.NewKeyAction("1m", l.sinceCmd(60), true),
+		ui.Key2:         ui.NewKeyAction("5m", l.sinceCmd(5*60), true),
+		ui.Key3:         ui.NewKeyAction("15m", l.sinceCmd(15*60), true),
+		ui.Key4:         ui.NewKeyAction("30m", l.sinceCmd(30*60), true),
+		ui.Key5:         ui.NewKeyAction("1h", l.sinceCmd(60*60), true),
+		tcell.KeyEnter:  ui.NewSharedKeyAction("Filter", l.filterCmd, false),
+		tcell.KeyEscape: ui.NewKeyAction("Back", l.resetCmd, false),
+		ui.KeyShiftC:    ui.NewKeyAction("Clear", l.clearCmd, true),
+		ui.KeyM:         ui.NewKeyAction("Mark", l.markCmd, true),
+		ui.KeyS:         ui.NewKeyAction("Toggle AutoScroll", l.toggleAutoScrollCmd, true),
+		ui.KeyF:         ui.NewKeyAction("Toggle FullScreen", l.toggleFullScreenCmd, true),
+		ui.KeyT:         ui.NewKeyAction("Toggle Timestamp", l.toggleTimestampCmd, true),
+		ui.KeyW:         ui.NewKeyAction("Toggle Wrap", l.toggleTextWrapCmd, true),
+		tcell.KeyCtrlS:  ui.NewKeyAction("Save", l.SaveCmd, true),
+		ui.KeyC:         ui.NewKeyAction("Copy", l.cpCmd, true),
 	})
+}
+
+func (l *Log) resetCmd(evt *tcell.EventKey) *tcell.EventKey {
+	if !l.logs.cmdBuff.IsActive() {
+		if l.logs.cmdBuff.GetText() == "" {
+			return l.app.PrevCmd(evt)
+		}
+	}
+
+	l.logs.cmdBuff.Reset()
+	l.logs.cmdBuff.SetActive(false)
+	l.model.Filter(l.logs.cmdBuff.GetText())
+	l.updateTitle()
+
+	return nil
 }
 
 // SendStrokes (testing only!)
@@ -232,20 +260,22 @@ func (l *Log) updateTitle() {
 }
 
 // Logs returns the log viewer.
-func (l *Log) Logs() *Details {
+func (l *Log) Logs() *Logger {
 	return l.logs
 }
 
-// Flush write logs to viewer.
-func (l *Log) Flush(lines dao.LogItems) {
-	defer func(t time.Time) {
-		log.Debug().Msgf("FLUSH %d--%v", len(lines), time.Since(t))
-	}(time.Now())
+// EOL tracks end of lines.
+var EOL = []byte{'\n'}
 
-	showTime := l.Indicator().showTime
-	ll := make([][]byte, len(lines))
-	lines.Render(showTime, ll)
-	fmt.Fprintln(l.ansiWriter, string(bytes.Join(ll, []byte("\n"))))
+// Flush write logs to viewer.
+func (l *Log) Flush(lines [][]byte) {
+	if !l.indicator.AutoScroll() {
+		return
+	}
+	_, _ = l.ansiWriter.Write(EOL)
+	if _, err := l.ansiWriter.Write(bytes.Join(lines, EOL)); err != nil {
+		log.Error().Err(err).Msgf("write logs failed")
+	}
 	l.logs.ScrollToEnd()
 	l.indicator.Refresh()
 }
@@ -255,9 +285,7 @@ func (l *Log) Flush(lines dao.LogItems) {
 
 func (l *Log) sinceCmd(a int) func(evt *tcell.EventKey) *tcell.EventKey {
 	return func(evt *tcell.EventKey) *tcell.EventKey {
-		opts := l.model.LogOptions()
-		opts.SinceSeconds = int64(a)
-		l.model.SetLogOptions(opts)
+		l.model.SetSinceSeconds(int64(a))
 		l.updateTitle()
 		return nil
 	}
@@ -267,17 +295,16 @@ func (l *Log) filterCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if !l.logs.cmdBuff.IsActive() {
 		return evt
 	}
+
 	l.logs.cmdBuff.SetActive(false)
-	if err := l.model.Filter(l.logs.cmdBuff.GetText()); err != nil {
-		l.app.Flash().Err(err)
-	}
+	l.model.Filter(l.logs.cmdBuff.GetText())
 	l.updateTitle()
 
 	return nil
 }
 
 // SaveCmd dumps the logs to file.
-func (l *Log) SaveCmd(evt *tcell.EventKey) *tcell.EventKey {
+func (l *Log) SaveCmd(*tcell.EventKey) *tcell.EventKey {
 	if path, err := saveData(l.app.Config.K9s.CurrentCluster, l.model.GetPath(), l.logs.GetText(true)); err != nil {
 		l.app.Flash().Err(err)
 	} else {
@@ -286,18 +313,32 @@ func (l *Log) SaveCmd(evt *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+func (l *Log) cpCmd(*tcell.EventKey) *tcell.EventKey {
+	l.app.Flash().Info("Content copied to clipboard...")
+	if err := clipboard.WriteAll(l.logs.GetText(true)); err != nil {
+		l.app.Flash().Err(err)
+	}
+	return nil
+}
+
+func sanitizeFilename(name string) string {
+	processedString := invalidPathCharsRX.ReplaceAllString(name, "-")
+
+	return processedString
+}
+
 func ensureDir(dir string) error {
 	return os.MkdirAll(dir, 0744)
 }
 
 func saveData(cluster, name, data string) (string, error) {
-	dir := filepath.Join(config.K9sDumpDir, cluster)
+	dir := filepath.Join(config.K9sDumpDir, sanitizeFilename(cluster))
 	if err := ensureDir(dir); err != nil {
 		return "", err
 	}
 
 	now := time.Now().UnixNano()
-	fName := fmt.Sprintf("%s-%d.log", strings.Replace(name, "/", "-", -1), now)
+	fName := fmt.Sprintf("%s-%d.log", sanitizeFilename(name), now)
 
 	path := filepath.Join(dir, fName)
 	mod := os.O_CREATE | os.O_WRONLY
@@ -324,13 +365,19 @@ func (l *Log) clearCmd(*tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+func (l *Log) markCmd(*tcell.EventKey) *tcell.EventKey {
+	_, _, w, _ := l.GetRect()
+	fmt.Fprintf(l.ansiWriter, "\n[white::b]%s[::]", strings.Repeat("─", w-4))
+	return nil
+}
+
 func (l *Log) toggleTimestampCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if l.app.InCmdMode() {
 		return evt
 	}
 
 	l.indicator.ToggleTimestamp()
-	l.model.Refresh()
+	l.model.ToggleShowTimestamp(l.indicator.showTime)
 
 	return nil
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 )
 
 const aliasTitle = "Aliases"
@@ -24,20 +24,21 @@ func NewAlias(gvr client.GVR) ResourceViewer {
 		ResourceViewer: NewBrowser(gvr),
 	}
 	a.GetTable().SetColorerFn(render.Alias{}.ColorerFunc())
-	a.GetTable().SetBorderFocusColor(tcell.ColorMediumSpringGreen)
-	a.GetTable().SetSelectedStyle(tcell.ColorWhite, tcell.ColorMediumSpringGreen, tcell.AttrNone)
-	a.SetBindKeysFn(a.bindKeys)
+	a.GetTable().SetBorderFocusColor(tcell.ColorAliceBlue)
+	a.GetTable().SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorAliceBlue).Attributes(tcell.AttrNone))
+	a.AddBindKeysFn(a.bindKeys)
 	a.SetContextFn(a.aliasContext)
 
 	return &a
 }
 
-// Init initialiazes the view.
+// Init initializes the view.
 func (a *Alias) Init(ctx context.Context) error {
 	if err := a.ResourceViewer.Init(ctx); err != nil {
 		return err
 	}
 	a.GetTable().GetModel().SetNamespace("*")
+
 	return nil
 }
 
@@ -47,6 +48,7 @@ func (a *Alias) aliasContext(ctx context.Context) context.Context {
 
 func (a *Alias) bindKeys(aa ui.KeyActions) {
 	aa.Delete(ui.KeyShiftA, ui.KeyShiftN, tcell.KeyCtrlS, tcell.KeyCtrlSpace, ui.KeySpace)
+	aa.Delete(tcell.KeyCtrlW, tcell.KeyCtrlL)
 	aa.Add(ui.KeyActions{
 		tcell.KeyEnter: ui.NewKeyAction("Goto", a.gotoCmd, true),
 		ui.KeyShiftR:   ui.NewKeyAction("Sort Resource", a.GetTable().SortColCmd("RESOURCE", true), false),
@@ -56,6 +58,10 @@ func (a *Alias) bindKeys(aa ui.KeyActions) {
 }
 
 func (a *Alias) gotoCmd(evt *tcell.EventKey) *tcell.EventKey {
+	if a.GetTable().CmdBuff().IsActive() {
+		return a.GetTable().activateCmd(evt)
+	}
+
 	r, _ := a.GetTable().GetSelection()
 	if r != 0 {
 		s := ui.TrimCell(a.GetTable().SelectTable, r, 1)
@@ -66,8 +72,5 @@ func (a *Alias) gotoCmd(evt *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 
-	if a.GetTable().CmdBuff().IsActive() {
-		return a.GetTable().activateCmd(evt)
-	}
 	return evt
 }

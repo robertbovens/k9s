@@ -8,8 +8,8 @@ import (
 
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
+	"github.com/fvbommel/sortorder"
 	"github.com/rs/zerolog/log"
-	"vbom.ml/util/sortorder"
 )
 
 const (
@@ -205,7 +205,7 @@ func (t *TreeNode) Spec() NodeSpec {
 
 // Flatten returns a collection of node specs.
 func (t *TreeNode) Flatten() []NodeSpec {
-	var refs []NodeSpec
+	refs := make([]NodeSpec, 0, len(t.Children))
 	for _, c := range t.Children {
 		if c.IsLeaf() {
 			refs = append(refs, c.Spec())

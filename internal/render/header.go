@@ -39,6 +39,20 @@ func (h Header) Clone() Header {
 	return header
 }
 
+// Labelize returns a new Header based on labels.
+func (h Header) Labelize(cols []int, labelCol int, rr RowEvents) Header {
+	header := make(Header, 0, len(cols)+1)
+	for _, c := range cols {
+		header = append(header, h[c])
+	}
+	cc := rr.ExtractHeaderLabels(labelCol)
+	for _, c := range cc {
+		header = append(header, HeaderColumn{Name: c})
+	}
+
+	return header
+}
+
 // MapIndices returns a collection of mapped column indices based of the requested columns.
 func (h Header) MapIndices(cols []string, wide bool) []int {
 	ii := make([]int, 0, len(cols))
@@ -115,7 +129,7 @@ func (h Header) Columns(wide bool) []string {
 	if len(h) == 0 {
 		return nil
 	}
-	var cc []string
+	cc := make([]string, 0, len(h))
 	for _, c := range h {
 		if !wide && c.Wide {
 			continue
@@ -129,6 +143,11 @@ func (h Header) Columns(wide bool) []string {
 // HasAge returns true if table has an age column.
 func (h Header) HasAge() bool {
 	return h.IndexOf(ageCol, true) != -1
+}
+
+// IsMetricsCol checks if given column index represents metrics.
+func (h Header) IsMetricsCol(col int) bool {
+	return h[col].MX
 }
 
 // IsAgeCol checks if given column index is the age column.

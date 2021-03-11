@@ -4,9 +4,10 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
-	"vbom.ml/util/sortorder"
+	"github.com/fvbommel/sortorder"
 )
 
 // Fields represents a collection of row fields.
@@ -55,6 +56,20 @@ type Row struct {
 // NewRow returns a new row with initialized fields.
 func NewRow(size int) Row {
 	return Row{Fields: make([]string, size)}
+}
+
+// Labelize returns a new row based on labels.
+func (r Row) Labelize(cols []int, labelCol int, labels []string) Row {
+	out := NewRow(len(cols) + len(labels))
+	for _, col := range cols {
+		out.Fields = append(out.Fields, r.Fields[col])
+	}
+	m := labelize(r.Fields[labelCol])
+	for _, label := range labels {
+		out.Fields = append(out.Fields, m[label])
+	}
+
+	return out
 }
 
 // Customize returns a row subset based on given col indices.
@@ -132,8 +147,14 @@ func (rr Rows) Find(id string) (int, bool) {
 }
 
 // Sort rows based on column index and order.
-func (rr Rows) Sort(col int, asc bool) {
-	t := RowSorter{Rows: rr, Index: col, Asc: asc}
+func (rr Rows) Sort(col int, asc, isNum, isDur bool) {
+	t := RowSorter{
+		Rows:       rr,
+		Index:      col,
+		IsNumber:   isNum,
+		IsDuration: isDur,
+		Asc:        asc,
+	}
 	sort.Sort(t)
 }
 
@@ -141,9 +162,10 @@ func (rr Rows) Sort(col int, asc bool) {
 
 // RowSorter sorts rows.
 type RowSorter struct {
-	Rows  Rows
-	Index int
-	Asc   bool
+	Rows                 Rows
+	Index                int
+	IsNumber, IsDuration bool
+	Asc                  bool
 }
 
 func (s RowSorter) Len() int {
@@ -155,7 +177,7 @@ func (s RowSorter) Swap(i, j int) {
 }
 
 func (s RowSorter) Less(i, j int) bool {
-	return Less(s.Asc, s.Rows[i].Fields[s.Index], s.Rows[j].Fields[s.Index])
+	return Less(s.Asc, s.IsNumber, s.IsDuration, s.Rows[i].Fields[s.Index], s.Rows[j].Fields[s.Index])
 }
 
 // ----------------------------------------------------------------------------
@@ -171,8 +193,13 @@ func toAgeDuration(dur string) string {
 }
 
 // Less return true if c1 < c2.
-func Less(asc bool, c1, c2 string) bool {
-	c1, c2 = toAgeDuration(c1), toAgeDuration(c2)
+func Less(asc, isNumber, isDuration bool, c1, c2 string) bool {
+	if isNumber {
+		c1, c2 = strings.Replace(c1, ",", "", -1), strings.Replace(c2, ",", "", -1)
+	}
+	if isDuration {
+		c1, c2 = toAgeDuration(c1), toAgeDuration(c2)
+	}
 	b := sortorder.NaturalLess(c1, c2)
 	if asc {
 		return b

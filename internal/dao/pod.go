@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
@@ -17,15 +18,22 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	restclient "k8s.io/client-go/rest"
 	mv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
 var (
-	_ Accessor   = (*Pod)(nil)
-	_ Nuker      = (*Pod)(nil)
-	_ Loggable   = (*Pod)(nil)
-	_ Controller = (*Pod)(nil)
+	_ Accessor        = (*Pod)(nil)
+	_ Nuker           = (*Pod)(nil)
+	_ Loggable        = (*Pod)(nil)
+	_ Controller      = (*Pod)(nil)
+	_ ContainsPodSpec = (*Pod)(nil)
+)
+
+const (
+	logRetryCount = 20
+	logRetryWait  = 1 * time.Second
 )
 
 // Pod represents a pod resource.
@@ -57,9 +65,7 @@ func (p *Pod) Get(ctx context.Context, path string) (runtime.Object, error) {
 
 	var pmx *mv1beta1.PodMetrics
 	if withMx, ok := ctx.Value(internal.KeyWithMetrics).(bool); withMx || !ok {
-		if pmx, err = client.DialMetrics(p.Client()).FetchPodMetrics(ctx, path); err != nil {
-			log.Debug().Err(err).Msgf("No pod metrics")
-		}
+		pmx, _ = client.DialMetrics(p.Client()).FetchPodMetrics(ctx, path)
 	}
 
 	return &render.PodWithMetrics{Raw: u, MX: pmx}, nil
@@ -67,27 +73,21 @@ func (p *Pod) Get(ctx context.Context, path string) (runtime.Object, error) {
 
 // List returns a collection of nodes.
 func (p *Pod) List(ctx context.Context, ns string) ([]runtime.Object, error) {
-	sel, ok := ctx.Value(internal.KeyFields).(string)
-	if !ok {
-		return nil, fmt.Errorf("expecting a fieldSelector in context")
-	}
-	fsel, err := labels.ConvertSelectorToLabelsMap(sel)
-	if err != nil {
-		return nil, err
-	}
-	nodeName := fsel["spec.nodeName"]
-
 	oo, err := p.Resource.List(ctx, ns)
 	if err != nil {
 		return oo, err
 	}
 
-	var pmx *mv1beta1.PodMetricsList
+	var pmx client.PodsMetricsMap
 	if withMx, ok := ctx.Value(internal.KeyWithMetrics).(bool); withMx || !ok {
-		if pmx, err = client.DialMetrics(p.Client()).FetchPodsMetrics(ctx, ns); err != nil {
-			log.Debug().Err(err).Msgf("No pods metrics")
-		}
+		pmx, _ = client.DialMetrics(p.Client()).FetchPodsMetricsMap(ctx, ns)
 	}
+	sel, _ := ctx.Value(internal.KeyFields).(string)
+	fsel, err := labels.ConvertSelectorToLabelsMap(sel)
+	if err != nil {
+		return nil, err
+	}
+	nodeName := fsel["spec.nodeName"]
 
 	res := make([]runtime.Object, 0, len(oo))
 	for _, o := range oo {
@@ -95,8 +95,9 @@ func (p *Pod) List(ctx context.Context, ns string) ([]runtime.Object, error) {
 		if !ok {
 			return res, fmt.Errorf("expecting *unstructured.Unstructured but got `%T", o)
 		}
+		fqn := extractFQN(o)
 		if nodeName == "" {
-			res = append(res, &render.PodWithMetrics{Raw: u, MX: podMetricsFor(o, pmx)})
+			res = append(res, &render.PodWithMetrics{Raw: u, MX: pmx[fqn]})
 			continue
 		}
 
@@ -105,7 +106,7 @@ func (p *Pod) List(ctx context.Context, ns string) ([]runtime.Object, error) {
 			return res, fmt.Errorf("expecting interface map but got `%T", o)
 		}
 		if spec["nodeName"] == nodeName {
-			res = append(res, &render.PodWithMetrics{Raw: u, MX: podMetricsFor(o, pmx)})
+			res = append(res, &render.PodWithMetrics{Raw: u, MX: pmx[fqn]})
 		}
 	}
 
@@ -123,8 +124,13 @@ func (p *Pod) Logs(path string, opts *v1.PodLogOptions) (*restclient.Request, er
 		return nil, fmt.Errorf("user is not authorized to view pod logs")
 	}
 
+	dial, err := p.Client().Dial()
+	if err != nil {
+		return nil, err
+	}
+
 	ns, n := client.Namespaced(path)
-	return p.Client().DialOrDie().CoreV1().Pods(ns).GetLogs(n, opts), nil
+	return dial.CoreV1().Pods(ns).GetLogs(n, opts), nil
 }
 
 // Containers returns all container names on pod
@@ -155,7 +161,7 @@ func (p *Pod) Pod(fqn string) (string, error) {
 
 // GetInstance returns a pod instance.
 func (p *Pod) GetInstance(fqn string) (*v1.Pod, error) {
-	o, err := p.Factory.Get(p.gvr.String(), fqn, false, labels.Everything())
+	o, err := p.Factory.Get(p.gvr.String(), fqn, true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -187,10 +193,7 @@ func (p *Pod) TailLogs(ctx context.Context, c LogChan, opts LogOptions) error {
 
 	if opts.HasContainer() {
 		opts.SingleContainer = true
-		if err := tailLogs(ctx, p, c, opts); err != nil {
-			return err
-		}
-		return nil
+		return tailLogs(ctx, p, c, opts)
 	}
 	if len(po.Spec.InitContainers)+len(po.Spec.Containers) == 1 {
 		opts.SingleContainer = true
@@ -198,15 +201,13 @@ func (p *Pod) TailLogs(ctx context.Context, c LogChan, opts LogOptions) error {
 
 	var tailed bool
 	for _, co := range po.Spec.InitContainers {
-		log.Debug().Msgf("Tailing INIT-CO %q", co.Name)
 		opts.Container = co.Name
-		if err := p.TailLogs(ctx, c, opts); err != nil {
+		if err := tailLogs(ctx, p, c, opts); err != nil {
 			return err
 		}
 		tailed = true
 	}
 	for _, co := range po.Spec.Containers {
-		log.Debug().Msgf("Tailing CO %q", co.Name)
 		opts.Container = co.Name
 		if err := tailLogs(ctx, p, c, opts); err != nil {
 			return err
@@ -214,7 +215,6 @@ func (p *Pod) TailLogs(ctx context.Context, c LogChan, opts LogOptions) error {
 		tailed = true
 	}
 	for _, co := range po.Spec.EphemeralContainers {
-		log.Debug().Msgf("Tailing EPH-CO %q", co.Name)
 		opts.Container = co.Name
 		if err := tailLogs(ctx, p, c, opts); err != nil {
 			return err
@@ -229,21 +229,131 @@ func (p *Pod) TailLogs(ctx context.Context, c LogChan, opts LogOptions) error {
 	return nil
 }
 
-func tailLogs(ctx context.Context, logger Logger, c LogChan, opts LogOptions) error {
-	log.Debug().Msgf("Tailing logs for %q:%q", opts.Path, opts.Container)
-	req, err := logger.Logs(opts.Path, opts.ToPodLogOptions())
+// ScanSA scans for ServiceAccount refs.
+func (p *Pod) ScanSA(ctx context.Context, fqn string, wait bool) (Refs, error) {
+	ns, n := client.Namespaced(fqn)
+	oo, err := p.Factory.List(p.GVR(), ns, wait, labels.Everything())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// This call will block if nothing is in the stream!!
-	stream, err := req.Stream(ctx)
+	refs := make(Refs, 0, len(oo))
+	for _, o := range oo {
+		var pod v1.Pod
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &pod)
+		if err != nil {
+			return nil, errors.New("expecting Deployment resource")
+		}
+		// Just pick controller less pods...
+		if len(pod.ObjectMeta.OwnerReferences) > 0 {
+			continue
+		}
+		if pod.Spec.ServiceAccountName == n {
+			refs = append(refs, Ref{
+				GVR: p.GVR(),
+				FQN: client.FQN(pod.Namespace, pod.Name),
+			})
+		}
+	}
+
+	return refs, nil
+}
+
+// Scan scans for cluster resource refs.
+func (p *Pod) Scan(ctx context.Context, gvr, fqn string, wait bool) (Refs, error) {
+	ns, n := client.Namespaced(fqn)
+	oo, err := p.Factory.List(p.GVR(), ns, wait, labels.Everything())
 	if err != nil {
-		c <- opts.DecorateLog([]byte(err.Error() + "\n"))
+		return nil, err
+	}
+
+	refs := make(Refs, 0, len(oo))
+	for _, o := range oo {
+		var pod v1.Pod
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &pod)
+		if err != nil {
+			return nil, errors.New("expecting Pod resource")
+		}
+		// Just pick controller less pods...
+		if len(pod.ObjectMeta.OwnerReferences) > 0 {
+			continue
+		}
+		switch gvr {
+		case "v1/configmaps":
+			if !hasConfigMap(&pod.Spec, n) {
+				continue
+			}
+			refs = append(refs, Ref{
+				GVR: p.GVR(),
+				FQN: client.FQN(pod.Namespace, pod.Name),
+			})
+		case "v1/secrets":
+			found, err := hasSecret(p.Factory, &pod.Spec, pod.Namespace, n, wait)
+			if err != nil {
+				log.Warn().Err(err).Msgf("locate secret %q", fqn)
+				continue
+			}
+			if !found {
+				continue
+			}
+			refs = append(refs, Ref{
+				GVR: p.GVR(),
+				FQN: client.FQN(pod.Namespace, pod.Name),
+			})
+		case "v1/persistentvolumeclaims":
+			if !hasPVC(&pod.Spec, n) {
+				continue
+			}
+			refs = append(refs, Ref{
+				GVR: p.GVR(),
+				FQN: client.FQN(pod.Namespace, pod.Name),
+			})
+		}
+	}
+
+	return refs, nil
+}
+
+// ----------------------------------------------------------------------------
+// Helpers...
+
+func tailLogs(ctx context.Context, logger Logger, c LogChan, opts LogOptions) error {
+	log.Debug().Msgf("Tailing logs for %q:%q", opts.Path, opts.Container)
+
+	var (
+		err    error
+		req    *restclient.Request
+		stream io.ReadCloser
+	)
+done:
+	for r := 0; r < logRetryCount; r++ {
+		req, err = logger.Logs(opts.Path, opts.ToPodLogOptions())
+		if err == nil {
+			// This call will block if nothing is in the stream!!
+			if stream, err = req.Stream(ctx); err == nil {
+				go readLogs(stream, c, opts)
+				break
+			} else {
+				log.Error().Err(err).Msg("Streaming logs")
+			}
+		} else {
+			log.Error().Err(err).Msg("Requesting logs")
+		}
+
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			break done
+		default:
+			time.Sleep(logRetryWait)
+		}
+	}
+
+	if err != nil {
 		log.Error().Err(err).Msgf("Unable to obtain log stream failed for `%s", opts.Path)
+		c <- opts.DecorateLog([]byte("\n" + err.Error() + "\n"))
 		return err
 	}
-	go readLogs(stream, c, opts)
 
 	return nil
 }
@@ -260,33 +370,17 @@ func readLogs(stream io.ReadCloser, c LogChan, opts LogOptions) {
 	for {
 		bytes, err := r.ReadBytes('\n')
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				log.Warn().Err(err).Msgf("Stream closed for %s", opts.Info())
-				c <- opts.DecorateLog([]byte("log stream closed\n"))
+				c <- opts.DecorateLog([]byte("\nlog stream closed\n"))
 				return
 			}
 			log.Warn().Err(err).Msgf("Stream READ error %s", opts.Info())
-			c <- opts.DecorateLog([]byte("log stream failed\n"))
+			c <- opts.DecorateLog([]byte(fmt.Sprintf("\nlog stream failed: %#v\n", err)))
 			return
 		}
 		c <- opts.DecorateLog(bytes)
 	}
-}
-
-// ----------------------------------------------------------------------------
-// Helpers...
-
-func podMetricsFor(o runtime.Object, mmx *mv1beta1.PodMetricsList) *mv1beta1.PodMetrics {
-	if mmx == nil {
-		return nil
-	}
-	fqn := extractFQN(o)
-	for _, mx := range mmx.Items {
-		if MetaFQN(mx.ObjectMeta) == fqn {
-			return &mx
-		}
-	}
-	return nil
 }
 
 // MetaFQN returns a fully qualified resource name.
@@ -310,18 +404,18 @@ func extractFQN(o runtime.Object) string {
 	u, ok := o.(*unstructured.Unstructured)
 	if !ok {
 		log.Error().Err(fmt.Errorf("expecting unstructured but got %T", o))
-		return "na"
+		return client.NA
 	}
 	m, ok := u.Object["metadata"].(map[string]interface{})
 	if !ok {
 		log.Error().Err(fmt.Errorf("expecting interface map for metadata but got %T", u.Object["metadata"]))
-		return "na"
+		return client.NA
 	}
 
 	n, ok := m["name"].(string)
 	if !ok {
 		log.Error().Err(fmt.Errorf("expecting interface map for name but got %T", m["name"]))
-		return "na"
+		return client.NA
 	}
 
 	ns, ok := m["namespace"].(string)
@@ -340,4 +434,61 @@ func in(ll []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// GetPodSpec returns a pod spec given a resource.
+func (p *Pod) GetPodSpec(path string) (*v1.PodSpec, error) {
+	pod, err := p.GetInstance(path)
+	if err != nil {
+		return nil, err
+	}
+	podSpec := pod.Spec
+	return &podSpec, nil
+}
+
+// SetImages sets container images.
+func (p *Pod) SetImages(ctx context.Context, path string, imageSpecs ImageSpecs) error {
+	ns, n := client.Namespaced(path)
+	auth, err := p.Client().CanI(ns, "v1/pod", []string{client.PatchVerb})
+	if err != nil {
+		return err
+	}
+	if !auth {
+		return fmt.Errorf("user is not authorized to patch a deployment")
+	}
+	manager, isManaged, err := p.isControlled(path)
+	if err != nil {
+		return err
+	}
+	if isManaged {
+		return fmt.Errorf("Unable to set image. This pod is managed by %s. Please set the image on the controller", manager)
+	}
+	jsonPatch, err := GetJsonPatch(imageSpecs)
+	if err != nil {
+		return err
+	}
+	dial, err := p.Client().Dial()
+	if err != nil {
+		return err
+	}
+	_, err = dial.CoreV1().Pods(ns).Patch(
+		ctx,
+		n,
+		types.StrategicMergePatchType,
+		jsonPatch,
+		metav1.PatchOptions{},
+	)
+	return err
+}
+
+func (p *Pod) isControlled(path string) (string, bool, error) {
+	pod, err := p.GetInstance(path)
+	if err != nil {
+		return "", false, err
+	}
+	references := pod.GetObjectMeta().GetOwnerReferences()
+	if len(references) > 0 {
+		return fmt.Sprintf("%s/%s", references[0].Kind, references[0].Name), true, nil
+	}
+	return "", false, nil
 }

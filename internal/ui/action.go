@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/derailed/k9s/internal/model"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -83,7 +83,7 @@ func (a KeyActions) Hints() model.MenuHints {
 				},
 			)
 		} else {
-			log.Error().Msgf("Unable to locate KeyName for %#v", string(k))
+			log.Error().Msgf("Unable to locate KeyName for %#v", k)
 		}
 	}
 	return hh

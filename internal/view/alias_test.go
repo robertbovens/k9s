@@ -12,7 +12,7 @@ import (
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/k9s/internal/view"
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,13 +29,13 @@ func TestAliasNew(t *testing.T) {
 func TestAliasSearch(t *testing.T) {
 	v := view.NewAlias(client.NewGVR("aliases"))
 	assert.Nil(t, v.Init(makeContext()))
-	v.GetTable().SetModel(&testModel{})
+	v.GetTable().SetModel(&mockModel{})
 	v.GetTable().Refresh()
 	v.App().Prompt().SetModel(v.GetTable().CmdBuff())
 	v.App().Prompt().SendStrokes("blee")
 
 	assert.Equal(t, 3, v.GetTable().GetColumnCount())
-	assert.Equal(t, 2, v.GetTable().GetRowCount())
+	assert.Equal(t, 3, v.GetTable().GetRowCount())
 }
 
 func TestAliasGoto(t *testing.T) {
@@ -62,6 +62,8 @@ type buffL struct {
 func (b *buffL) BufferChanged(s string) {
 	b.changed++
 }
+func (b *buffL) BufferCompleted(s string) {}
+
 func (b *buffL) BufferActive(state bool, kind model.BufferKind) {
 	b.active++
 }
@@ -94,41 +96,44 @@ func (k ks) NamespaceNames(nn []v1.Namespace) []string {
 	return []string{"test"}
 }
 
-type testModel struct{}
+type mockModel struct{}
 
-var _ ui.Tabular = (*testModel)(nil)
-var _ ui.Suggester = (*testModel)(nil)
+var _ ui.Tabular = (*mockModel)(nil)
+var _ ui.Suggester = (*mockModel)(nil)
 
-func (t *testModel) CurrentSuggestion() (string, bool) { return "", false }
-func (t *testModel) NextSuggestion() (string, bool)    { return "", false }
-func (t *testModel) PrevSuggestion() (string, bool)    { return "", false }
-func (t *testModel) ClearSuggestions()                 {}
+func (t *mockModel) CurrentSuggestion() (string, bool)  { return "", false }
+func (t *mockModel) NextSuggestion() (string, bool)     { return "", false }
+func (t *mockModel) PrevSuggestion() (string, bool)     { return "", false }
+func (t *mockModel) ClearSuggestions()                  {}
+func (t *mockModel) SetInstance(string)                 {}
+func (t *mockModel) SetLabelFilter(string)              {}
+func (t *mockModel) Empty() bool                        { return false }
+func (t *mockModel) HasMetrics() bool                   { return true }
+func (t *mockModel) Peek() render.TableData             { return makeTableData() }
+func (t *mockModel) ClusterWide() bool                  { return false }
+func (t *mockModel) GetNamespace() string               { return "blee" }
+func (t *mockModel) SetNamespace(string)                {}
+func (t *mockModel) ToggleToast()                       {}
+func (t *mockModel) AddListener(model.TableListener)    {}
+func (t *mockModel) RemoveListener(model.TableListener) {}
+func (t *mockModel) Watch(context.Context) error        { return nil }
+func (t *mockModel) Refresh(context.Context) error      { return nil }
+func (t *mockModel) Get(context.Context, string) (runtime.Object, error) {
 
-func (t *testModel) SetInstance(string)              {}
-func (t *testModel) Empty() bool                     { return false }
-func (t *testModel) HasMetrics() bool                { return true }
-func (t *testModel) Peek() render.TableData          { return makeTableData() }
-func (t *testModel) ClusterWide() bool               { return false }
-func (t *testModel) GetNamespace() string            { return "blee" }
-func (t *testModel) SetNamespace(string)             {}
-func (t *testModel) ToggleToast()                    {}
-func (t *testModel) AddListener(model.TableListener) {}
-func (t *testModel) Watch(context.Context)           {}
-func (t *testModel) Get(context.Context, string) (runtime.Object, error) {
 	return nil, nil
 }
-func (t *testModel) Delete(context.Context, string, bool, bool) error {
+func (t *mockModel) Delete(context.Context, string, bool, bool) error {
 	return nil
 }
-func (t *testModel) Describe(context.Context, string) (string, error) {
+func (t *mockModel) Describe(context.Context, string) (string, error) {
 	return "", nil
 }
-func (t *testModel) ToYAML(ctx context.Context, path string) (string, error) {
+func (t *mockModel) ToYAML(ctx context.Context, path string) (string, error) {
 	return "", nil
 }
 
-func (t *testModel) InNamespace(string) bool      { return true }
-func (t *testModel) SetRefreshRate(time.Duration) {}
+func (t *mockModel) InNamespace(string) bool      { return true }
+func (t *mockModel) SetRefreshRate(time.Duration) {}
 
 func makeTableData() render.TableData {
 	return render.TableData{
