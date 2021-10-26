@@ -155,9 +155,11 @@ func (c *Command) defaultCmd() error {
 	}
 	tokens := strings.Split(view, " ")
 	cmd := view
-	ns, err := c.app.Conn().Config().CurrentNamespaceName()
-	if err == nil && !isContextCmd(tokens[0]) {
-		cmd = tokens[0] + " " + ns
+	if len(tokens) == 1 || c.app.Conn().Config().OverrideNS {
+		ns, err := c.app.Conn().Config().CurrentNamespaceName()
+		if err == nil && !isContextCmd(tokens[0]) {
+			cmd = tokens[0] + " " + ns
+		}
 	}
 
 	if err := c.run(cmd, "", true); err != nil {
@@ -258,6 +260,9 @@ func (c *Command) exec(cmd, gvr string, comp model.Component, clearStack bool) (
 		return fmt.Errorf("No component found for %s", gvr)
 	}
 	c.app.Flash().Infof("Viewing %s...", client.NewGVR(gvr).R())
+	if tokens := strings.Split(cmd, " "); len(tokens) >= 2 {
+		cmd = tokens[0]
+	}
 	c.app.Config.SetActiveView(cmd)
 	if err := c.app.Config.Save(); err != nil {
 		log.Error().Err(err).Msg("Config save failed!")

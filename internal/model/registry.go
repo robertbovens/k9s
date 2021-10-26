@@ -7,7 +7,7 @@ import (
 )
 
 // Registry tracks resources metadata.
-// BOZO!! Break up deps and merge into single registrar
+// BOZO!! Break up deps and merge into single registrar.
 var Registry = map[string]ResourceMeta{
 	// Custom...
 	"references": {
@@ -18,17 +18,18 @@ var Registry = map[string]ResourceMeta{
 		DAO:      &dao.Dir{},
 		Renderer: &render.Dir{},
 	},
+	"pulses": {
+		DAO: &dao.Pulse{},
+	},
 	"helm": {
 		DAO:      &dao.Helm{},
 		Renderer: &render.Helm{},
 	},
-	"pulses": {
-		DAO: &dao.Pulse{},
-	},
-	"openfaas": {
-		DAO:      &dao.OpenFaas{},
-		Renderer: &render.OpenFaas{},
-	},
+	// BOZO!! revamp with latest...
+	// "openfaas": {
+	// 	DAO:      &dao.OpenFaas{},
+	// 	Renderer: &render.OpenFaas{},
+	// },
 	"containers": {
 		DAO:          &dao.Container{},
 		Renderer:     &render.Container{},
@@ -135,15 +136,6 @@ var Registry = map[string]ResourceMeta{
 	},
 
 	// Extensions...
-	"extensions/v1beta1/daemonsets": {
-		Renderer: &render.DaemonSet{},
-	},
-	"extensions/v1beta1/ingresses": {
-		Renderer: &render.Ingress{},
-	},
-	"extensions/v1beta1/networkpolicies": {
-		Renderer: &render.NetworkPolicy{},
-	},
 	"networking.k8s.io/v1/networkpolicies": {
 		Renderer: &render.NetworkPolicy{},
 	},
@@ -174,9 +166,6 @@ var Registry = map[string]ResourceMeta{
 
 	// CRDs...
 	"apiextensions.k8s.io/v1/customresourcedefinitions": {
-		Renderer: &render.CustomResourceDefinition{},
-	},
-	"apiextensions.k8s.io/v1beta1/customresourcedefinitions": {
 		Renderer: &render.CustomResourceDefinition{},
 	},
 

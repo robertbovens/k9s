@@ -48,6 +48,7 @@ type App struct {
 	filterHistory *model.History
 	conRetry      int32
 	showHeader    bool
+	showLogo      bool
 	showCrumbs    bool
 }
 
@@ -135,7 +136,7 @@ func (a *App) layout(ctx context.Context) {
 
 	a.Main.AddPage("main", main, true, false)
 	a.Main.AddPage("splash", ui.NewSplash(a.Styles, a.version), true, true)
-	a.toggleHeader(!a.Config.K9s.IsHeadless())
+	a.toggleHeader(!a.Config.K9s.IsHeadless(), !a.Config.K9s.IsLogoless())
 }
 
 func (a *App) initSignals() {
@@ -197,8 +198,9 @@ func (a *App) ActiveView() model.Component {
 	return a.Content.GetPrimitive("main").(model.Component)
 }
 
-func (a *App) toggleHeader(flag bool) {
-	a.showHeader = flag
+func (a *App) toggleHeader(header, logo bool) {
+	a.showHeader = header
+	a.showLogo = logo
 	flex, ok := a.Main.GetPrimitive("main").(*tview.Flex)
 	if !ok {
 		log.Fatal().Msg("Expecting valid flex view")
@@ -245,7 +247,10 @@ func (a *App) buildHeader() tview.Primitive {
 	}
 	header.AddItem(a.clusterInfo(), clWidth, 1, false)
 	header.AddItem(a.Menu(), 0, 1, false)
-	header.AddItem(a.Logo(), 26, 1, false)
+
+	if a.showLogo {
+		header.AddItem(a.Logo(), 26, 1, false)
+	}
 
 	return header
 }
@@ -405,9 +410,7 @@ func (a *App) switchCtx(name string, loadPods bool) error {
 
 		a.Flash().Infof("Switching context to %s", name)
 		a.ReloadStyles(name)
-		if err := a.gotoResource(v, "", true); loadPods && err != nil {
-			a.Flash().Err(err)
-		}
+		a.gotoResource(v, "", true)
 		a.clusterModel.Reset(a.factory)
 	}
 
@@ -434,7 +437,7 @@ func (a *App) BailOut() {
 	a.App.BailOut()
 }
 
-// Run starts the application loop
+// Run starts the application loop.
 func (a *App) Run() error {
 	a.Resume()
 
@@ -524,7 +527,7 @@ func (a *App) toggleHeaderCmd(evt *tcell.EventKey) *tcell.EventKey {
 
 	a.QueueUpdateDraw(func() {
 		a.showHeader = !a.showHeader
-		a.toggleHeader(a.showHeader)
+		a.toggleHeader(a.showHeader, a.showLogo)
 	})
 
 	return nil
@@ -545,10 +548,7 @@ func (a *App) toggleCrumbsCmd(evt *tcell.EventKey) *tcell.EventKey {
 
 func (a *App) gotoCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if a.CmdBuff().IsActive() && !a.CmdBuff().Empty() {
-		if err := a.gotoResource(a.GetCmd(), "", true); err != nil {
-			log.Error().Err(err).Msgf("Goto resource for %q failed", a.GetCmd())
-			a.Flash().Err(err)
-		}
+		a.gotoResource(a.GetCmd(), "", true)
 		a.ResetCmd()
 		return nil
 	}
@@ -581,16 +581,18 @@ func (a *App) dirCmd(path string) error {
 }
 
 func (a *App) helpCmd(evt *tcell.EventKey) *tcell.EventKey {
-	if a.CmdBuff().InCmdMode() {
+	top := a.Content.Top()
+
+	if a.CmdBuff().InCmdMode() || (top != nil && top.InCmdMode()) {
 		return evt
 	}
 
-	if a.Content.Top() != nil && a.Content.Top().Name() == "help" {
+	if top != nil && top.Name() == "help" {
 		a.Content.Pop()
 		return nil
 	}
 
-	if err := a.inject(NewHelp()); err != nil {
+	if err := a.inject(NewHelp(a)); err != nil {
 		a.Flash().Err(err)
 	}
 
@@ -614,10 +616,10 @@ func (a *App) aliasCmd(evt *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
-func (a *App) gotoResource(cmd, path string, clearStack bool) error {
+func (a *App) gotoResource(cmd, path string, clearStack bool) {
 	err := a.command.run(cmd, path, clearStack)
 	if err == nil {
-		return err
+		return
 	}
 
 	c := NewCow(a, err.Error())
@@ -626,8 +628,6 @@ func (a *App) gotoResource(cmd, path string, clearStack bool) error {
 		a.Content.Stack.Clear()
 	}
 	a.Content.Push(c)
-
-	return nil
 }
 
 func (a *App) inject(c model.Component) error {

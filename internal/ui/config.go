@@ -17,7 +17,7 @@ type synchronizer interface {
 	QueueUpdate(func())
 }
 
-// Configurator represents an application configurationa.
+// Configurator represents an application configuration.
 type Configurator struct {
 	Config     *config.Config
 	Styles     *config.Styles
@@ -47,7 +47,7 @@ func (c *Configurator) CustomViewsWatcher(ctx context.Context, s synchronizer) e
 					c.RefreshCustomViews()
 				})
 			case err := <-w.Errors:
-				log.Info().Err(err).Msg("CustomView watcher failed")
+				log.Warn().Err(err).Msg("CustomView watcher failed")
 				return
 			case <-ctx.Done():
 				log.Debug().Msgf("CustomViewWatcher Done `%s!!", config.K9sViewConfigFile)
@@ -73,7 +73,7 @@ func (c *Configurator) RefreshCustomViews() {
 	}
 
 	if err := c.CustomView.Load(config.K9sViewConfigFile); err != nil {
-		log.Error().Err(err).Msgf("Custom view load failed %s", config.K9sViewConfigFile)
+		log.Warn().Err(err).Msgf("Custom view load failed %s", config.K9sViewConfigFile)
 		return
 	}
 }
@@ -93,10 +93,11 @@ func (c *Configurator) StylesWatcher(ctx context.Context, s synchronizer) error 
 		for {
 			select {
 			case evt := <-w.Events:
-				_ = evt
-				s.QueueUpdateDraw(func() {
-					c.RefreshStyles(c.Config.K9s.CurrentCluster)
-				})
+				if evt.Op != fsnotify.Chmod {
+					s.QueueUpdateDraw(func() {
+						c.RefreshStyles(c.Config.K9s.CurrentCluster)
+					})
+				}
 			case err := <-w.Errors:
 				log.Info().Err(err).Msg("Skin watcher failed")
 				return
@@ -130,14 +131,14 @@ func (c *Configurator) RefreshStyles(context string) {
 		c.Styles.Reset()
 	}
 	if err := c.Styles.Load(clusterSkins); err != nil {
-		log.Info().Msgf("No context specific skin file found -- %s", clusterSkins)
+		log.Warn().Msgf("No context specific skin file found -- %s", clusterSkins)
 	} else {
 		c.updateStyles(clusterSkins)
 		return
 	}
 
 	if err := c.Styles.Load(config.K9sStylesFile); err != nil {
-		log.Info().Msgf("No skin file found -- %s. Loading stock skins.", config.K9sStylesFile)
+		log.Warn().Msgf("No skin file found -- %s. Loading stock skins.", config.K9sStylesFile)
 		c.updateStyles("")
 		return
 	}

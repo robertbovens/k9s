@@ -8,7 +8,7 @@ import (
 
 const ageCol = "AGE"
 
-// HeaderColumn represent a table header
+// HeaderColumn represent a table header.
 type HeaderColumn struct {
 	Name      string
 	Align     int
@@ -176,7 +176,7 @@ func (h Header) IndexOf(colName string, includeWide bool) int {
 	return -1
 }
 
-// Dump for debuging.
+// Dump for debugging.
 func (h Header) Dump() {
 	log.Debug().Msgf("HEADER")
 	for i, c := range h {

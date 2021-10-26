@@ -77,7 +77,7 @@ type DrainOptions struct {
 	GracePeriodSeconds  int
 	Timeout             time.Duration
 	IgnoreAllDaemonSets bool
-	DeleteLocalData     bool
+	DeleteEmptyDirData  bool
 	Force               bool
 }
 
@@ -93,7 +93,7 @@ type NodeMaintainer interface {
 // Loggable represents resources with logs.
 type Loggable interface {
 	// TaiLogs streams resource logs.
-	TailLogs(ctx context.Context, c LogChan, opts LogOptions) error
+	TailLogs(ctx context.Context, c LogChan, opts *LogOptions) error
 }
 
 // Describer describes a resource.

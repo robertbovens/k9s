@@ -16,7 +16,7 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-// Describe tracks describeable resources.
+// Describe tracks describable resources.
 type Describe struct {
 	gvr         client.GVR
 	inUpdate    int32
@@ -95,13 +95,18 @@ func (d *Describe) fireResourceFailed(err error) {
 	}
 }
 
-// ClearFilter clear out the filter
+// ClearFilter clear out the filter.
 func (d *Describe) ClearFilter() {
 }
 
 // Peek returns current model state.
 func (d *Describe) Peek() []string {
 	return d.lines
+}
+
+// Refresh updates model data.
+func (d *Describe) Refresh(ctx context.Context) error {
+	return d.refresh(ctx)
 }
 
 // Watch watches for describe data changes.
@@ -136,6 +141,7 @@ func (d *Describe) updater(ctx context.Context) {
 		}
 	}
 }
+
 func (d *Describe) refresh(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&d.inUpdate, 0, 1) {
 		log.Debug().Msgf("Dropping update...")

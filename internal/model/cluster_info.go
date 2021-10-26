@@ -100,9 +100,9 @@ func (c *ClusterInfo) fetchK9sLatestRev() string {
 		return rev.(string)
 	}
 
-	latestRev, err := fetchLastestRev()
+	latestRev, err := fetchLatestRev()
 	if err != nil {
-		log.Error().Msgf("k9s latest rev fetch failed")
+		log.Warn().Msgf("k9s latest rev fetch failed %s", err)
 	} else {
 		c.cache.Add(k9sLatestRevKey, latestRev, cacheExpiry)
 	}
@@ -116,7 +116,7 @@ func (c *ClusterInfo) Reset(f dao.Factory) {
 	c.Refresh()
 }
 
-// Refresh fetches latest cluster meta.
+// Refresh fetches the latest cluster meta.
 func (c *ClusterInfo) Refresh() {
 	data := NewClusterMeta()
 	data.Context = c.cluster.ContextName()
@@ -136,7 +136,7 @@ func (c *ClusterInfo) Refresh() {
 	if err := c.cluster.Metrics(ctx, &mx); err == nil {
 		data.Cpu, data.Mem, data.Ephemeral = mx.PercCPU, mx.PercMEM, mx.PercEphemeral
 	} else {
-		log.Error().Err(err).Msgf("Cluster metrics failed")
+		log.Warn().Err(err).Msgf("Cluster metrics failed")
 	}
 
 	if c.data.Deltas(data) {
@@ -181,7 +181,7 @@ func (c *ClusterInfo) fireNoMetaChanged(data ClusterMeta) {
 
 // Helpers...
 
-func fetchLastestRev() (string, error) {
+func fetchLatestRev() (string, error) {
 	log.Debug().Msgf("Fetching latest k9s rev...")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

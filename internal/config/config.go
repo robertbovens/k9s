@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/adrg/xdg"
 	"github.com/derailed/k9s/internal/client"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
@@ -18,8 +19,6 @@ import (
 const K9sConfig = "K9SCONFIG"
 
 var (
-	// DefaultK9sHome represent K9s home directory.
-	DefaultK9sHome = filepath.Join(mustK9sHome(), ".k9s")
 	// K9sConfigFile represents K9s config file location.
 	K9sConfigFile = filepath.Join(K9sHome(), "config.yml")
 	// K9sLogs represents K9s log.
@@ -49,9 +48,10 @@ type (
 
 	// Config tracks K9s configuration options.
 	Config struct {
-		K9s      *K9s `yaml:"k9s"`
-		client   client.Connection
-		settings KubeSettings
+		K9s        *K9s `yaml:"k9s"`
+		client     client.Connection
+		settings   KubeSettings
+		overrideNS bool
 	}
 )
 
@@ -60,8 +60,12 @@ func K9sHome() string {
 	if env := os.Getenv(K9sConfig); env != "" {
 		return env
 	}
+	xdgK9sHome, err := xdg.ConfigFile("k9s")
+	if err != nil {
+		log.Fatal().Err(err).Msg("Unable to create configuration directory for k9s")
+	}
 
-	return DefaultK9sHome
+	return xdgK9sHome
 }
 
 // NewConfig creates a new default config.
@@ -70,12 +74,11 @@ func NewConfig(ks KubeSettings) *Config {
 }
 
 // Refine the configuration based on cli args.
-func (c *Config) Refine(flags *genericclioptions.ConfigFlags) error {
+func (c *Config) Refine(flags *genericclioptions.ConfigFlags, k9sFlags *Flags) error {
 	cfg, err := flags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
 		return err
 	}
-
 	if isSet(flags.Context) {
 		c.K9s.CurrentContext = *flags.Context
 	} else {
@@ -90,20 +93,27 @@ func (c *Config) Refine(flags *genericclioptions.ConfigFlags) error {
 		return fmt.Errorf("The specified context %q does not exists in kubeconfig", c.K9s.CurrentContext)
 	}
 	c.K9s.CurrentCluster = context.Cluster
-	if len(context.Namespace) != 0 {
-		if err := c.SetActiveNamespace(context.Namespace); err != nil {
+	c.K9s.ActivateCluster()
+
+	var ns string
+	var override bool
+	if k9sFlags != nil && IsBoolSet(k9sFlags.AllNamespaces) {
+		ns, override = client.NamespaceAll, true
+	} else if isSet(flags.Namespace) {
+		ns, override = *flags.Namespace, true
+	} else if context.Namespace != "" {
+		ns = context.Namespace
+	}
+
+	if ns != "" {
+		if err := c.SetActiveNamespace(ns); err != nil {
 			return err
 		}
+		flags.Namespace, c.overrideNS = &ns, override
 	}
 
 	if isSet(flags.ClusterName) {
 		c.K9s.CurrentCluster = *flags.ClusterName
-	}
-
-	if isSet(flags.Namespace) {
-		if err := c.SetActiveNamespace(*flags.Namespace); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -125,11 +135,19 @@ func (c *Config) CurrentCluster() *Cluster {
 
 // ActiveNamespace returns the active namespace in the current cluster.
 func (c *Config) ActiveNamespace() string {
-	if cl := c.CurrentCluster(); cl != nil {
-		if cl.Namespace != nil {
-			return cl.Namespace.Active
-		}
+	if c.K9s.Clusters == nil {
+		log.Warn().Msgf("No context detected returning default namespace")
+		return "default"
 	}
+	cl := c.CurrentCluster()
+	if cl == nil {
+		cl = NewCluster()
+		c.K9s.Clusters[c.K9s.CurrentCluster] = cl
+	}
+	if cl.Namespace != nil {
+		return cl.Namespace.Active
+	}
+
 	return "default"
 }
 
@@ -177,7 +195,7 @@ func (c *Config) ActiveView() string {
 	return cmd
 }
 
-// SetActiveView set the currently cluster active view
+// SetActiveView set the currently cluster active view.
 func (c *Config) SetActiveView(view string) {
 	cl := c.K9s.ActiveCluster()
 	if cl != nil {
@@ -193,9 +211,12 @@ func (c *Config) GetConnection() client.Connection {
 // SetConnection set an api server connection.
 func (c *Config) SetConnection(conn client.Connection) {
 	c.client = conn
+	if c.client != nil && c.client.Config() != nil {
+		c.client.Config().OverrideNS = c.overrideNS
+	}
 }
 
-// Load K9s configuration from file
+// Load K9s configuration from file.
 func (c *Config) Load(path string) error {
 	f, err := ioutil.ReadFile(path)
 	if err != nil {

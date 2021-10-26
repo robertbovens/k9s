@@ -40,7 +40,7 @@ func NewBrowser(gvr client.GVR) ResourceViewer {
 	}
 }
 
-// Init watches all running pods in given namespace
+// Init watches all running pods in given namespace.
 func (b *Browser) Init(ctx context.Context) error {
 	var err error
 	b.meta, err = dao.MetaAccess.MetaFor(b.GVR())
@@ -82,6 +82,11 @@ func (b *Browser) Init(ctx context.Context) error {
 	return nil
 }
 
+// InCmdMode checks if prompt is active.
+func (b *Browser) InCmdMode() bool {
+	return b.CmdBuff().InCmdMode()
+}
+
 func (b *Browser) suggestFilter() model.SuggestionFunc {
 	return func(s string) (entries sort.StringSlice) {
 		if s == "" {
@@ -108,6 +113,7 @@ func (b *Browser) bindKeys(aa ui.KeyActions) {
 	aa.Add(ui.KeyActions{
 		tcell.KeyEscape: ui.NewSharedKeyAction("Filter Reset", b.resetCmd, false),
 		tcell.KeyEnter:  ui.NewSharedKeyAction("Filter", b.filterCmd, false),
+		tcell.KeyHelp:   ui.NewSharedKeyAction("Help", b.helpCmd, false),
 	})
 }
 
@@ -241,6 +247,14 @@ func (b *Browser) viewCmd(evt *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+func (b *Browser) helpCmd(evt *tcell.EventKey) *tcell.EventKey {
+	if b.CmdBuff().InCmdMode() {
+		return nil
+	}
+
+	return evt
+}
+
 func (b *Browser) resetCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if !b.CmdBuff().InCmdMode() {
 		b.CmdBuff().ClearText(false)
@@ -330,7 +344,6 @@ func (b *Browser) editCmd(evt *tcell.EventKey) *tcell.EventKey {
 	path := b.GetSelectedItem()
 	if path == "" {
 		return evt
-
 	}
 	ns, n := client.Namespaced(path)
 	if client.IsClusterScoped(ns) {

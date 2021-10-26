@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 )
@@ -85,7 +84,7 @@ func (g *Generic) ToYAML(path string, showManaged bool) (string, error) {
 
 	raw, err := ToYAML(o, showManaged)
 	if err != nil {
-		return "", fmt.Errorf("unable to marshal resource %s", err)
+		return "", fmt.Errorf("unable to marshal resource %w", err)
 	}
 	return raw, nil
 }

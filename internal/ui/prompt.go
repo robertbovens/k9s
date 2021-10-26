@@ -34,7 +34,7 @@ type Suggester interface {
 	ClearSuggestions()
 }
 
-// PromptModel represents a prompt buffer
+// PromptModel represents a prompt buffer.
 type PromptModel interface {
 	// SetText sets the model text.
 	SetText(string)
@@ -94,8 +94,8 @@ func NewPrompt(noIcons bool, styles *config.Styles) *Prompt {
 	p.SetDynamicColors(true)
 	p.SetBorder(true)
 	p.SetBorderPadding(0, 0, 1, 1)
-	p.SetBackgroundColor(styles.BgColor())
-	p.SetTextColor(styles.FgColor())
+	p.SetBackgroundColor(styles.K9s.Prompt.BgColor.Color())
+	p.SetTextColor(styles.K9s.Prompt.FgColor.Color())
 	styles.AddListener(&p)
 	p.SetInputCapture(p.keyboard)
 
@@ -129,6 +129,7 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 		return evt
 	}
 
+	// nolint:exhaustive
 	switch evt.Key() {
 	case tcell.KeyBackspace2, tcell.KeyBackspace, tcell.KeyDelete:
 		p.model.Delete()
@@ -163,8 +164,8 @@ func (p *Prompt) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 // StylesChanged notifies skin changed.
 func (p *Prompt) StylesChanged(s *config.Styles) {
 	p.styles = s
-	p.SetBackgroundColor(s.BgColor())
-	p.SetTextColor(s.FgColor())
+	p.SetBackgroundColor(s.K9s.Prompt.BgColor.Color())
+	p.SetTextColor(s.K9s.Prompt.FgColor.Color())
 }
 
 // InCmdMode returns true if command is active, false otherwise.
@@ -195,7 +196,7 @@ func (p *Prompt) write(text, suggest string) {
 	p.SetCursorIndex(p.spacer + len(text))
 	txt := text
 	if suggest != "" {
-		txt += "[gray::-]" + suggest
+		txt += fmt.Sprintf("[%s::-]%s", p.styles.K9s.Prompt.SuggestColor, suggest)
 	}
 	fmt.Fprintf(p, defaultPrompt, p.icon, txt)
 }
@@ -242,6 +243,7 @@ func (p *Prompt) iconFor(k model.BufferKind) rune {
 		return ' '
 	}
 
+	// nolint:exhaustive
 	switch k {
 	case model.CommandBuffer:
 		return '🐶'
@@ -254,6 +256,7 @@ func (p *Prompt) iconFor(k model.BufferKind) rune {
 // Helpers...
 
 func colorFor(k model.BufferKind) tcell.Color {
+	// nolint:exhaustive
 	switch k {
 	case model.CommandBuffer:
 		return tcell.ColorAqua

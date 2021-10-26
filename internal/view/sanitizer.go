@@ -41,7 +41,7 @@ func NewSanitizer(gvr client.GVR) ResourceViewer {
 	}
 }
 
-// Init initializes the view
+// Init initializes the view.
 func (s *Sanitizer) Init(ctx context.Context) error {
 	s.envFn = s.k9sEnv
 
@@ -82,6 +82,11 @@ func (s *Sanitizer) Init(ctx context.Context) error {
 	s.refreshActions()
 
 	return nil
+}
+
+// InCmdMode checks if prompt is active.
+func (*Sanitizer) InCmdMode() bool {
+	return false
 }
 
 // ExtraHints returns additional hints.
@@ -217,9 +222,7 @@ func (s *Sanitizer) gotoCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if len(strings.Split(path, "/")) == 1 && spec.GVR() != "node" {
 		path = "-/" + path
 	}
-	if err := s.app.gotoResource(client.NewGVR(spec.GVR()).R(), path, false); err != nil {
-		log.Debug().Err(err)
-	}
+	s.app.gotoResource(client.NewGVR(spec.GVR()).R(), path, false)
 
 	return nil
 }
@@ -315,7 +318,7 @@ func (s *Sanitizer) hydrate(parent *tview.TreeNode, n *xray.TreeNode) {
 // SetEnvFn sets the custom environment function.
 func (s *Sanitizer) SetEnvFn(EnvFunc) {}
 
-// Refresh updates the view
+// Refresh updates the view.
 func (s *Sanitizer) Refresh() {}
 
 // BufferChanged indicates the buffer was changed.

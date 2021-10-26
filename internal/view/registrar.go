@@ -60,9 +60,10 @@ func miscViewers(vv MetaViewers) {
 	vv[client.NewGVR("contexts")] = MetaViewer{
 		viewerFn: NewContext,
 	}
-	vv[client.NewGVR("openfaas")] = MetaViewer{
-		viewerFn: NewOpenFaas,
-	}
+	// BOZO!! revamp with latest...
+	// vv[client.NewGVR("openfaas")] = MetaViewer{
+	// 	viewerFn: NewOpenFaas,
+	// }
 	vv[client.NewGVR("containers")] = MetaViewer{
 		viewerFn: NewContainer,
 	}
@@ -105,7 +106,7 @@ func appsViewers(vv MetaViewers) {
 	vv[client.NewGVR("apps/v1/daemonsets")] = MetaViewer{
 		viewerFn: NewDaemonSet,
 	}
-	vv[client.NewGVR("extensions/v1beta1/daemonsets")] = MetaViewer{
+	vv[client.NewGVR("apps/v1/daemonsets")] = MetaViewer{
 		viewerFn: NewDaemonSet,
 	}
 }
@@ -138,6 +139,9 @@ func batchViewers(vv MetaViewers) {
 	vv[client.NewGVR("batch/v1beta1/cronjobs")] = MetaViewer{
 		viewerFn: NewCronJob,
 	}
+	vv[client.NewGVR("batch/v1/cronjobs")] = MetaViewer{
+		viewerFn: NewCronJob,
+	}
 	vv[client.NewGVR("batch/v1/jobs")] = MetaViewer{
 		viewerFn: NewJob,
 	}
@@ -147,7 +151,7 @@ func extViewers(vv MetaViewers) {
 	vv[client.NewGVR("apiextensions.k8s.io/v1/customresourcedefinitions")] = MetaViewer{
 		enterFn: showCRD,
 	}
-	vv[client.NewGVR("apiextensions.k8s.io/v1beta1/customresourcedefinitions")] = MetaViewer{
+	vv[client.NewGVR("apiextensions.k8s.io/v1/customresourcedefinitions")] = MetaViewer{
 		enterFn: showCRD,
 	}
 }
@@ -155,7 +159,5 @@ func extViewers(vv MetaViewers) {
 func showCRD(app *App, _ ui.Tabular, _, path string) {
 	_, crdGVR := client.Namespaced(path)
 	tokens := strings.Split(crdGVR, ".")
-	if err := app.gotoResource(tokens[0], "", false); err != nil {
-		app.Flash().Err(err)
-	}
+	app.gotoResource(tokens[0], "", false)
 }

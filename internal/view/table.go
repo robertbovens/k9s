@@ -33,7 +33,7 @@ func NewTable(gvr client.GVR) *Table {
 	return &t
 }
 
-// Init initializes the component
+// Init initializes the component.
 func (t *Table) Init(ctx context.Context) (err error) {
 	if t.app, err = extractApp(ctx); err != nil {
 		return err
@@ -50,6 +50,16 @@ func (t *Table) Init(ctx context.Context) (err error) {
 	t.CmdBuff().AddListener(t)
 
 	return nil
+}
+
+// HeaderIndex returns index of a given column or false if not found.
+func (t *Table) HeaderIndex(header string) (int, bool) {
+	for i := 0; i < t.GetColumnCount(); i++ {
+		if h := t.GetCell(0, i); h != nil && h.Text == header {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // SendKey sends an keyboard event (testing only!).
@@ -97,6 +107,10 @@ func (t *Table) defaultEnv() Env {
 	if env["FILTER"] == "" {
 		env["NAMESPACE"], env["FILTER"] = client.Namespaced(path)
 	}
+
+	env["RESOURCE_GROUP"] = t.GVR().G()
+	env["RESOURCE_VERSION"] = t.GVR().V()
+	env["RESOURCE_NAME"] = t.GVR().R()
 
 	return env
 }

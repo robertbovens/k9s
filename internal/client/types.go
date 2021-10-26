@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	// NA Not available
+	// NA Not available.
 	NA = "n/a"
 
 	// NamespaceAll designates the fictional all namespace.
@@ -75,7 +75,7 @@ type Authorizer interface {
 	CanI(ns, gvr string, verbs []string) (bool, error)
 }
 
-// Connection represents a Kubenetes apiserver connection.
+// Connection represents a Kubernetes apiserver connection.
 type Connection interface {
 	Authorizer
 

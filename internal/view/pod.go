@@ -20,6 +20,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+const (
+	windowsOS      = "windows"
+	powerShell     = "powershell"
+	osBetaSelector = "beta.kubernetes.io/os"
+	osSelector     = "kubernetes.io/os"
+)
+
 // Pod represents a pod viewer.
 type Pod struct {
 	ResourceViewer
@@ -27,10 +34,10 @@ type Pod struct {
 
 // NewPod returns a new viewer.
 func NewPod(gvr client.GVR) ResourceViewer {
-	p := Pod{}
+	var p Pod
 	p.ResourceViewer = NewPortForwardExtender(
 		NewImageExtender(
-			NewLogsExtender(NewBrowser(gvr), p.selectedContainer),
+			NewLogsExtender(NewBrowser(gvr), p.logOptions),
 		),
 	)
 	p.AddBindKeysFn(p.bindKeys)
@@ -78,21 +85,35 @@ func (p *Pod) bindKeys(aa ui.KeyActions) {
 	aa.Add(resourceSorters(p.GetTable()))
 }
 
-func (p *Pod) selectedContainer() string {
+func (p *Pod) logOptions(prev bool) (*dao.LogOptions, error) {
 	path := p.GetTable().GetSelectedItem()
 	if path == "" {
-		return ""
+		return nil, errors.New("you must provide a selection")
 	}
 
-	cc, err := fetchContainers(p.App().factory, path, true)
+	pod, err := fetchPod(p.App().factory, path)
 	if err != nil {
-		log.Error().Err(err).Msgf("Fetch containers")
-		return ""
+		return nil, err
 	}
-	if len(cc) == 1 {
-		return cc[0]
+
+	cc, cfg := fetchContainers(pod.Spec, true), p.App().Config.K9s.Logger
+	opts := dao.LogOptions{
+		Path:            path,
+		Lines:           int64(cfg.TailCount),
+		SinceSeconds:    cfg.SinceSeconds,
+		SingleContainer: len(cc) == 1,
+		ShowTimestamp:   cfg.ShowTime,
+		Previous:        prev,
 	}
-	return ""
+	if c, ok := dao.GetDefaultLogContainer(pod.ObjectMeta, pod.Spec); ok {
+		opts.Container, opts.DefaultContainer = c, c
+	} else if len(cc) == 1 {
+		opts.Container = cc[0]
+	} else {
+		opts.AllContainers = true
+	}
+
+	return &opts, nil
 }
 
 func (p *Pod) showContainers(app *App, model ui.Tabular, gvr, path string) {
@@ -214,10 +235,11 @@ func containerShellin(a *App, comp model.Component, path, co string) error {
 		return nil
 	}
 
-	cc, err := fetchContainers(a.factory, path, false)
+	pod, err := fetchPod(a.factory, path)
 	if err != nil {
 		return err
 	}
+	cc := fetchContainers(pod.Spec, false)
 	if len(cc) == 1 {
 		resumeShellIn(a, comp, path, cc[0])
 		return nil
@@ -227,11 +249,8 @@ func containerShellin(a *App, comp model.Component, path, co string) error {
 	picker.SetSelectedFunc(func(_ int, co, _ string, _ rune) {
 		resumeShellIn(a, comp, path, co)
 	})
-	if err := a.inject(picker); err != nil {
-		return err
-	}
 
-	return nil
+	return a.inject(picker)
 }
 
 func resumeShellIn(a *App, c model.Component, path, co string) {
@@ -241,11 +260,15 @@ func resumeShellIn(a *App, c model.Component, path, co string) {
 	shellIn(a, path, co)
 }
 
-func shellIn(a *App, path, co string) {
-	args := computeShellArgs(path, co, a.Conn().Config().Flags().KubeConfig)
+func shellIn(a *App, fqn, co string) {
+	os, err := getPodOS(a.factory, fqn)
+	if err != nil {
+		log.Warn().Err(err).Msgf("os detect failed")
+	}
+	args := computeShellArgs(fqn, co, a.Conn().Config().Flags().KubeConfig, os)
 
 	c := color.New(color.BgGreen).Add(color.FgBlack).Add(color.Bold)
-	if !runK(a, shellOpts{clear: true, banner: c.Sprintf(bannerFmt, path, co), args: args}) {
+	if !runK(a, shellOpts{clear: true, banner: c.Sprintf(bannerFmt, fqn, co), args: args}) {
 		a.Flash().Err(errors.New("Shell exec failed"))
 	}
 }
@@ -256,10 +279,11 @@ func containerAttachIn(a *App, comp model.Component, path, co string) error {
 		return nil
 	}
 
-	cc, err := fetchContainers(a.factory, path, false)
+	pod, err := fetchPod(a.factory, path)
 	if err != nil {
 		return err
 	}
+	cc := fetchContainers(pod.Spec, false)
 	if len(cc) == 1 {
 		resumeAttachIn(a, comp, path, cc[0])
 		return nil
@@ -291,8 +315,11 @@ func attachIn(a *App, path, co string) {
 	}
 }
 
-func computeShellArgs(path, co string, kcfg *string) []string {
+func computeShellArgs(path, co string, kcfg *string, os string) []string {
 	args := buildShellArgs("exec", path, co, kcfg)
+	if os == windowsOS {
+		return append(args, "--", powerShell)
+	}
 	return append(args, "--", "sh", "-c", shellCheck)
 }
 
@@ -314,24 +341,22 @@ func buildShellArgs(cmd, path, co string, kcfg *string) []string {
 	return args
 }
 
-func fetchContainers(f dao.Factory, path string, includeInit bool) ([]string, error) {
-	pod, err := fetchPod(f, path)
-	if err != nil {
-		return nil, err
-	}
-
-	nn := make([]string, 0, len(pod.Spec.Containers)+len(pod.Spec.InitContainers))
-	for _, c := range pod.Spec.Containers {
+func fetchContainers(spec v1.PodSpec, allContainers bool) []string {
+	nn := make([]string, 0, len(spec.Containers)+len(spec.InitContainers))
+	for _, c := range spec.Containers {
 		nn = append(nn, c.Name)
 	}
-	if !includeInit {
-		return nn, nil
+	if !allContainers {
+		return nn
 	}
-	for _, c := range pod.Spec.InitContainers {
+	for _, c := range spec.InitContainers {
+		nn = append(nn, c.Name)
+	}
+	for _, c := range spec.EphemeralContainers {
 		nn = append(nn, c.Name)
 	}
 
-	return nn, nil
+	return nn
 }
 
 func fetchPod(f dao.Factory, path string) (*v1.Pod, error) {
@@ -358,6 +383,22 @@ func podIsRunning(f dao.Factory, path string) bool {
 
 	var re render.Pod
 	return re.Phase(po) == render.Running
+}
+
+func getPodOS(f dao.Factory, fqn string) (string, error) {
+	po, err := fetchPod(f, fqn)
+	if err != nil {
+		return "", err
+	}
+	if os, ok := po.Spec.NodeSelector[osBetaSelector]; ok {
+		return os, nil
+	}
+	os, ok := po.Spec.NodeSelector[osSelector]
+	if !ok {
+		return "", fmt.Errorf("no os information available")
+	}
+
+	return os, nil
 }
 
 func resourceSorters(t *Table) ui.KeyActions {

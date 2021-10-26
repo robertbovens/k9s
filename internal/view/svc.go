@@ -59,6 +59,10 @@ func (s *Service) showPods(a *App, _ ui.Tabular, gvr, path string) {
 		a.Flash().Err(err)
 		return
 	}
+	if svc.Spec.Type == v1.ServiceTypeExternalName {
+		a.Flash().Warnf("No matching pods. Service %s is an external service.", path)
+		return
+	}
 
 	showPodsWithLabels(a, path, svc.Spec.Selector)
 }
@@ -76,7 +80,7 @@ func (s *Service) getExternalPort(svc *v1.Service) (string, error) {
 	}
 	ports := render.ToPorts(svc.Spec.Ports)
 	pp := strings.Split(ports, " ")
-	// Grap the first port pair for now...
+	// Grab the first port pair for now...
 	tokens := strings.Split(pp[0], "►")
 	if len(tokens) < 2 {
 		return "", errors.New("No ports pair found")
@@ -135,7 +139,7 @@ func (s *Service) toggleBenchCmd(evt *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
-// BOZO!! Refactor used by forwards
+// BOZO!! Refactor used by forwards.
 func (s *Service) runBenchmark(port string, cfg config.BenchConfig) error {
 	if cfg.HTTP.Host == "" {
 		return fmt.Errorf("Invalid benchmark host %q", cfg.HTTP.Host)

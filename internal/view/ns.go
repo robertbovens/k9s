@@ -21,7 +21,7 @@ type Namespace struct {
 	ResourceViewer
 }
 
-// NewNamespace returns a new viewer
+// NewNamespace returns a new viewer.
 func NewNamespace(gvr client.GVR) ResourceViewer {
 	n := Namespace{
 		ResourceViewer: NewBrowser(gvr),
@@ -36,15 +36,14 @@ func NewNamespace(gvr client.GVR) ResourceViewer {
 
 func (n *Namespace) bindKeys(aa ui.KeyActions) {
 	aa.Add(ui.KeyActions{
-		ui.KeyU: ui.NewKeyAction("Use", n.useNsCmd, true),
+		ui.KeyU:      ui.NewKeyAction("Use", n.useNsCmd, true),
+		ui.KeyShiftS: ui.NewKeyAction("Sort Status", n.GetTable().SortColCmd(statusCol, true), false),
 	})
 }
 
 func (n *Namespace) switchNs(app *App, model ui.Tabular, gvr, path string) {
 	n.useNamespace(path)
-	if err := app.gotoResource("pods", "", false); err != nil {
-		app.Flash().Err(err)
-	}
+	app.gotoResource("pods", "", false)
 }
 
 func (n *Namespace) useNsCmd(evt *tcell.EventKey) *tcell.EventKey {

@@ -23,16 +23,17 @@ const liveViewTitleFmt = "[fg:bg:b] %s([hilite:bg:b]%s[fg:bg:-])[fg:bg:-] "
 type LiveView struct {
 	*tview.Flex
 
+	title                     string
+	model                     model.ResourceViewer
 	text                      *tview.TextView
 	actions                   ui.KeyActions
 	app                       *App
-	title                     string
 	cmdBuff                   *model.FishBuff
-	model                     model.ResourceViewer
 	currentRegion, maxRegions int
+	cancel                    context.CancelFunc
 	fullScreen                bool
 	managedField              bool
-	cancel                    context.CancelFunc
+	autoRefresh               bool
 }
 
 // NewLiveView returns a live viewer.
@@ -79,10 +80,16 @@ func (v *LiveView) Init(_ context.Context) error {
 	return nil
 }
 
+// InCmdMode checks if prompt is active.
+func (v *LiveView) InCmdMode() bool {
+	return v.cmdBuff.InCmdMode()
+}
+
 // ResourceFailed notifies when their is an issue.
 func (v *LiveView) ResourceFailed(err error) {
 	v.text.SetTextAlign(tview.AlignCenter)
-	v.text.SetText(cowTalk(err.Error()))
+	x, _, w, _ := v.GetRect()
+	v.text.SetText(cowTalk(err.Error(), x+w))
 }
 
 // ResourceChanged notifies when the filter changes.
@@ -131,6 +138,7 @@ func (v *LiveView) bindKeys() {
 		tcell.KeyCtrlS:  ui.NewKeyAction("Save", v.saveCmd, false),
 		ui.KeyC:         ui.NewKeyAction("Copy", v.cpCmd, true),
 		ui.KeyF:         ui.NewKeyAction("Toggle FullScreen", v.toggleFullScreenCmd, true),
+		ui.KeyR:         ui.NewKeyAction("Toggle Auto-Refresh", v.toggleRefreshCmd, true),
 		ui.KeyN:         ui.NewKeyAction("Next Match", v.nextCmd, true),
 		ui.KeyShiftN:    ui.NewKeyAction("Prev Match", v.prevCmd, true),
 		ui.KeySlash:     ui.NewSharedKeyAction("Filter Mode", v.activateCmd, false),
@@ -142,6 +150,20 @@ func (v *LiveView) bindKeys() {
 			ui.KeyM: ui.NewKeyAction("Toggle ManagedFields", v.toggleManagedCmd, true),
 		})
 	}
+}
+
+// ToggleRefreshCmd is used for pausing the refreshing of data on config map and secrets.
+func (v *LiveView) toggleRefreshCmd(evt *tcell.EventKey) *tcell.EventKey {
+	v.autoRefresh = !v.autoRefresh
+	if v.autoRefresh {
+		v.Start()
+		v.app.Flash().Info("Auto-refresh is enabled")
+		return nil
+	}
+	v.Stop()
+	v.app.Flash().Info("Auto-refresh is disabled")
+
+	return nil
 }
 
 func (v *LiveView) keyboard(evt *tcell.EventKey) *tcell.EventKey {
@@ -160,7 +182,7 @@ func (v *LiveView) StylesChanged(s *config.Styles) {
 	v.ResourceChanged(v.model.Peek(), nil)
 }
 
-// Actions returns menu actions
+// Actions returns menu actions.
 func (v *LiveView) Actions() ui.KeyActions {
 	return v.actions
 }
@@ -170,11 +192,17 @@ func (v *LiveView) Name() string { return v.title }
 
 // Start starts the view updater.
 func (v *LiveView) Start() {
-	var ctx context.Context
-	ctx, v.cancel = context.WithCancel(v.defaultCtx())
+	if v.autoRefresh {
+		var ctx context.Context
+		ctx, v.cancel = context.WithCancel(v.defaultCtx())
 
-	if err := v.model.Watch(ctx); err != nil {
-		log.Error().Err(err).Msgf("LiveView watcher failed")
+		if err := v.model.Watch(ctx); err != nil {
+			log.Error().Err(err).Msgf("LiveView watcher failed")
+		}
+		return
+	}
+	if err := v.model.Refresh(v.defaultCtx()); err != nil {
+		log.Error().Err(err).Msgf("refresh failed")
 	}
 }
 
@@ -220,6 +248,11 @@ func (v *LiveView) toggleFullScreenCmd(evt *tcell.EventKey) *tcell.EventKey {
 	v.fullScreen = !v.fullScreen
 	v.SetFullScreen(v.fullScreen)
 	v.Box.SetBorder(!v.fullScreen)
+	if v.fullScreen {
+		v.Box.SetBorderPadding(0, 0, 0, 0)
+	} else {
+		v.Box.SetBorderPadding(0, 0, 1, 1)
+	}
 
 	return nil
 }

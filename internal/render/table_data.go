@@ -1,6 +1,8 @@
 package render
 
-import "github.com/derailed/k9s/internal/client"
+import (
+	"github.com/derailed/k9s/internal/client"
+)
 
 // TableData tracks a K8s resource for tabular display.
 type TableData struct {
@@ -19,7 +21,7 @@ func (t *TableData) IndexOfHeader(h string) int {
 	return t.Header.IndexOf(h, false)
 }
 
-// Labelize prints out specific label columns
+// Labelize prints out specific label columns.
 func (t *TableData) Labelize(labels []string) TableData {
 	labelCol := t.Header.IndexOf("LABELS", true)
 	cols := []int{0, 1}
@@ -52,7 +54,7 @@ func (t *TableData) Clear() {
 	t.Header, t.RowEvents = Header{}, RowEvents{}
 }
 
-// Clone returns a copy of the table
+// Clone returns a copy of the table.
 func (t *TableData) Clone() TableData {
 	return TableData{
 		Header:    t.Header.Clone(),

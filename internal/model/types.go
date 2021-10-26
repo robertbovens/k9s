@@ -34,6 +34,7 @@ type ResourceViewer interface {
 	Peek() []string
 	SetOptions(context.Context, ViewerToggleOpts)
 	Watch(context.Context) error
+	Refresh(context.Context) error
 	AddListener(ResourceViewerListener)
 	RemoveListener(ResourceViewerListener)
 }
@@ -67,11 +68,18 @@ type Primitive interface {
 	Name() string
 }
 
-// Component represents a ui component
+// Commander tracks prompt status.
+type Commander interface {
+	// InCmdMode checks if prompt is active.
+	InCmdMode() bool
+}
+
+// Component represents a ui component.
 type Component interface {
 	Primitive
 	Igniter
 	Hinter
+	Commander
 }
 
 // Renderer represents a resource renderer.

@@ -50,8 +50,8 @@ func (a *Aliases) ShortNames() ShortNames {
 
 	m := make(ShortNames, len(a.Alias))
 	for alias, gvr := range a.Alias {
-		if _, ok := m[gvr]; ok {
-			m[gvr] = append(m[gvr], alias)
+		if v, ok := m[gvr]; ok {
+			m[gvr] = append(v, alias)
 		} else {
 			m[gvr] = []string{alias}
 		}
@@ -84,6 +84,11 @@ func (a *Aliases) Define(gvr string, aliases ...string) {
 	a.mx.Lock()
 	defer a.mx.Unlock()
 
+	// BOZO!! Could not get full events struct using this api group??
+	if gvr == "events.k8s.io/v1/events" || gvr == "extensions/v1beta1" {
+		return
+	}
+
 	for _, alias := range aliases {
 		if _, ok := a.Alias[alias]; ok {
 			continue
@@ -101,19 +106,17 @@ func (a *Aliases) Load() error {
 // LoadFileAliases loads alias from a given file.
 func (a *Aliases) LoadFileAliases(path string) error {
 	f, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil
-	}
+	if err == nil {
+		var aa Aliases
+		if err := yaml.Unmarshal(f, &aa); err != nil {
+			return err
+		}
 
-	var aa Aliases
-	if err := yaml.Unmarshal(f, &aa); err != nil {
-		return err
-	}
-
-	a.mx.Lock()
-	defer a.mx.Unlock()
-	for k, v := range aa.Alias {
-		a.Alias[k] = v
+		a.mx.Lock()
+		defer a.mx.Unlock()
+		for k, v := range aa.Alias {
+			a.Alias[k] = v
+		}
 	}
 
 	return nil

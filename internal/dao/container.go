@@ -54,8 +54,8 @@ func (c *Container) List(ctx context.Context, _ string) ([]runtime.Object, error
 	return res, nil
 }
 
-// TailLogs tails a given container logs
-func (c *Container) TailLogs(ctx context.Context, logChan LogChan, opts LogOptions) error {
+// TailLogs tails a given container logs.
+func (c *Container) TailLogs(ctx context.Context, logChan LogChan, opts *LogOptions) error {
 	po := Pod{}
 	po.Init(c.Factory, client.NewGVR("v1/pods"))
 

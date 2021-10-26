@@ -44,7 +44,7 @@ func (g *Gauge) SetResolution(n int) {
 	g.resolution = n
 }
 
-// IsDial returns true if chart is a dial
+// IsDial returns true if chart is a dial.
 func (g *Gauge) IsDial() bool {
 	return true
 }
@@ -164,6 +164,7 @@ func computeDelta(d1, d2 int64) delta {
 
 func printDelta(sc tcell.Screen, d delta, o image.Point, s tcell.Style) {
 	s = s.Dim(false)
+	// nolint:exhaustive
 	switch d {
 	case DeltaLess:
 		sc.SetContent(o.X-1, o.Y+1, '↓', nil, s)

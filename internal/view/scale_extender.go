@@ -49,7 +49,12 @@ func (s *ScaleExtender) scaleCmd(evt *tcell.EventKey) *tcell.EventKey {
 }
 
 func (s *ScaleExtender) showScaleDialog(path string) {
-	confirm := tview.NewModalForm("<Scale>", s.makeScaleForm(path))
+	form, err := s.makeScaleForm(path)
+	if err != nil {
+		s.App().Flash().Err(err)
+		return
+	}
+	confirm := tview.NewModalForm("<Scale>", form)
 	confirm.SetText(fmt.Sprintf("Scale %s %s", s.GVR(), path))
 	confirm.SetDoneFunc(func(int, string) {
 		s.dismissDialog()
@@ -58,10 +63,25 @@ func (s *ScaleExtender) showScaleDialog(path string) {
 	s.App().Content.ShowPage(scaleDialogKey)
 }
 
-func (s *ScaleExtender) makeScaleForm(sel string) *tview.Form {
+func (s *ScaleExtender) valueOf(col string) (string, error) {
+	colIdx, ok := s.GetTable().HeaderIndex(col)
+	if !ok {
+		return "", fmt.Errorf("no column index for %s", col)
+	}
+	return s.GetTable().GetSelectedCell(colIdx), nil
+}
+
+func (s *ScaleExtender) makeScaleForm(sel string) (*tview.Form, error) {
 	f := s.makeStyledForm()
-	replicas := strings.TrimSpace(s.GetTable().GetCell(s.GetTable().GetSelectedRowIndex(), s.GetTable().NameColIndex()+1).Text)
+
+	replicas, err := s.valueOf("READY")
+	if err != nil {
+		return nil, err
+	}
 	tokens := strings.Split(replicas, "/")
+	if len(tokens) < 2 {
+		return nil, fmt.Errorf("unable to locate replicas from %s", replicas)
+	}
 	replicas = strings.TrimRight(tokens[1], ui.DeltaSign)
 	f.AddInputField("Replicas:", replicas, 4, func(textToCheck string, lastChar rune) bool {
 		_, err := strconv.Atoi(textToCheck)
@@ -82,16 +102,16 @@ func (s *ScaleExtender) makeScaleForm(sel string) *tview.Form {
 		if err := s.scale(ctx, sel, count); err != nil {
 			log.Error().Err(err).Msgf("DP %s scaling failed", sel)
 			s.App().Flash().Err(err)
-		} else {
-			s.App().Flash().Infof("Resource %s:%s scaled successfully", s.GVR(), sel)
+			return
 		}
+		s.App().Flash().Infof("Resource %s:%s scaled successfully", s.GVR(), sel)
 	})
 
 	f.AddButton("Cancel", func() {
 		s.dismissDialog()
 	})
 
-	return f
+	return f, nil
 }
 
 func (s *ScaleExtender) dismissDialog() {
@@ -113,7 +133,7 @@ func (s *ScaleExtender) makeStyledForm() *tview.Form {
 func (s *ScaleExtender) scale(ctx context.Context, path string, replicas int) error {
 	res, err := dao.AccessorFor(s.App().factory, s.GVR())
 	if err != nil {
-		return nil
+		return err
 	}
 	scaler, ok := res.(dao.Scalable)
 	if !ok {

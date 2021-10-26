@@ -62,9 +62,6 @@ func (c *ClusterInfo) hasMetrics() bool {
 
 func (c *ClusterInfo) layout() {
 	for row, section := range []string{"Context", "Cluster", "User", "K9s Rev", "K8s Rev", "CPU", "MEM"} {
-		if (section == "CPU" || section == "MEM") && !c.hasMetrics() {
-			continue
-		}
 		c.SetCell(row, 0, c.sectionCell(section))
 		c.SetCell(row, 1, c.infoCell(render.NAValue))
 	}
@@ -73,7 +70,7 @@ func (c *ClusterInfo) layout() {
 func (c *ClusterInfo) sectionCell(t string) *tview.TableCell {
 	cell := tview.NewTableCell(t + ":")
 	cell.SetAlign(tview.AlignLeft)
-	cell.SetBackgroundColor(tcell.ColorGreen)
+	cell.SetBackgroundColor(c.app.Styles.BgColor())
 
 	return cell
 }
@@ -118,6 +115,9 @@ func (c *ClusterInfo) ClusterInfoChanged(prev, curr model.ClusterMeta) {
 			row = c.setCell(row, ui.AsPercDelta(prev.Cpu, curr.Cpu))
 			_ = c.setCell(row, ui.AsPercDelta(prev.Mem, curr.Mem))
 			c.setDefCon(curr.Cpu, curr.Mem)
+		} else {
+			row = c.setCell(row, "[orangered::b]n/a")
+			_ = c.setCell(row, "[orangered::b]n/a")
 		}
 		c.updateStyle()
 	})
@@ -147,7 +147,10 @@ func (c *ClusterInfo) updateStyle() {
 		c.GetCell(row, 0).SetTextColor(c.styles.K9s.Info.FgColor.Color())
 		c.GetCell(row, 0).SetBackgroundColor(c.styles.BgColor())
 		var s tcell.Style
-		c.GetCell(row, 1).SetStyle(s.Bold(true).Foreground(c.styles.K9s.Info.SectionColor.Color()))
+		s = s.Bold(true)
+		s = s.Foreground(c.styles.K9s.Info.SectionColor.Color())
+		s = s.Background(c.styles.BgColor())
+		c.GetCell(row, 1).SetStyle(s)
 	}
 }
 
@@ -155,6 +158,7 @@ func (c *ClusterInfo) updateStyle() {
 // Helpers...
 
 func flashLevel(l config.SeverityLevel) model.FlashLevel {
+	// nolint:exhaustive
 	switch l {
 	case config.SeverityHigh:
 		return model.FlashErr
@@ -166,6 +170,7 @@ func flashLevel(l config.SeverityLevel) model.FlashLevel {
 }
 
 func flashMessage(l config.SeverityLevel) string {
+	// nolint:exhaustive
 	switch l {
 	case config.SeverityHigh:
 		return "Critical"

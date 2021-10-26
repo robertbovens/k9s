@@ -86,6 +86,7 @@ func (d *Deployment) Restart(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
+
 	_, err = dial.AppsV1().Deployments(dp.Namespace).Patch(
 		ctx,
 		dp.Name,
@@ -97,7 +98,7 @@ func (d *Deployment) Restart(ctx context.Context, path string) error {
 }
 
 // TailLogs tail logs for all pods represented by this Deployment.
-func (d *Deployment) TailLogs(ctx context.Context, c LogChan, opts LogOptions) error {
+func (d *Deployment) TailLogs(ctx context.Context, c LogChan, opts *LogOptions) error {
 	dp, err := d.Load(d.Factory, opts.Path)
 	if err != nil {
 		return err

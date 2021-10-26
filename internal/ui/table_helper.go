@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	// LabelRx identifies a label query
+	// LabelRx identifies a label query.
 	LabelRx = regexp.MustCompile(`\A\-l`)
 
 	inverseRx = regexp.MustCompile(`\A\!`)
@@ -153,7 +153,7 @@ func rxFilter(q string, inverse bool, data render.TableData) (render.TableData, 
 	}
 	rx, err := regexp.Compile(`(?i)(` + q + `)`)
 	if err != nil {
-		return data, err
+		return data, fmt.Errorf("%w -- %s", err, q)
 	}
 
 	filtered := render.TableData{

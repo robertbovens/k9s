@@ -114,8 +114,9 @@ func (s *SelectTable) selectionChanged(r, c int) {
 	if r < 0 {
 		return
 	}
-	cell := s.GetCell(r, c)
-	s.SetSelectedStyle(tcell.StyleDefault.Foreground(s.fgColor).Background(cell.Color).Attributes(tcell.AttrBold))
+	if cell := s.GetCell(r, c); cell != nil {
+		s.SetSelectedStyle(tcell.StyleDefault.Foreground(s.fgColor).Background(cell.Color).Attributes(tcell.AttrBold))
+	}
 }
 
 // ClearMarks delete all marked items.
@@ -130,7 +131,7 @@ func (s *SelectTable) DeleteMark(k string) {
 	delete(s.marks, k)
 }
 
-// ToggleMark toggles marked row
+// ToggleMark toggles marked row.
 func (s *SelectTable) ToggleMark() {
 	sel := s.GetSelectedItem()
 	if sel == "" {
@@ -142,14 +143,12 @@ func (s *SelectTable) ToggleMark() {
 		s.marks[sel] = struct{}{}
 	}
 
-	cell := s.GetCell(s.GetSelectedRowIndex(), 0)
-	if cell == nil {
-		return
+	if cell := s.GetCell(s.GetSelectedRowIndex(), 0); cell != nil {
+		s.SetSelectedStyle(tcell.StyleDefault.Foreground(cell.BackgroundColor).Background(cell.Color).Attributes(tcell.AttrBold))
 	}
-	s.SetSelectedStyle(tcell.StyleDefault.Foreground(cell.BackgroundColor).Background(cell.Color).Attributes(tcell.AttrBold))
 }
 
-// SpanMark toggles marked row
+// SpanMark toggles marked row.
 func (s *SelectTable) SpanMark() {
 	selIndex, prev := s.GetSelectedRowIndex(), -1
 	if selIndex <= 0 {

@@ -76,6 +76,8 @@ func (Pod) Header(ns string) Header {
 		HeaderColumn{Name: "QOS", Wide: true},
 		HeaderColumn{Name: "LABELS", Wide: true},
 		HeaderColumn{Name: "VALID", Wide: true},
+		HeaderColumn{Name: "NOMINATED NODE", Wide: true},
+		HeaderColumn{Name: "READINESS GATES", Wide: true},
 		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
 	}
 }
@@ -118,6 +120,8 @@ func (p Pod) Render(o interface{}, ns string, row *Row) error {
 		p.mapQOS(po.Status.QOSClass),
 		mapToStr(po.Labels),
 		asStatus(p.diagnose(phase, cr, len(ss))),
+		asNominated(po.Status.NominatedNodeName),
+		asReadinessGate(po),
 		toAge(po.ObjectMeta.CreationTimestamp),
 	}
 
@@ -137,6 +141,34 @@ func (p Pod) diagnose(phase string, cr, ct int) error {
 
 // ----------------------------------------------------------------------------
 // Helpers...
+
+func asNominated(n string) string {
+	if n == "" {
+		return MissingValue
+	}
+	return n
+}
+
+func asReadinessGate(pod v1.Pod) string {
+	if len(pod.Spec.ReadinessGates) == 0 {
+		return MissingValue
+	}
+
+	trueConditions := 0
+	for _, readinessGate := range pod.Spec.ReadinessGates {
+		conditionType := readinessGate.ConditionType
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == conditionType {
+				if condition.Status == "True" {
+					trueConditions++
+				}
+				break
+			}
+		}
+	}
+
+	return strconv.Itoa(trueConditions) + "/" + strconv.Itoa(len(pod.Spec.ReadinessGates))
+}
 
 // PodWithMetrics represents a pod and its metrics.
 type PodWithMetrics struct {
@@ -225,6 +257,7 @@ func currentRes(mx *mv1beta1.PodMetrics) (resource.Quantity, resource.Quantity) 
 }
 
 func (*Pod) mapQOS(class v1.PodQOSClass) string {
+	// nolint:exhaustive
 	switch class {
 	case v1.PodQOSGuaranteed:
 		return "GA"

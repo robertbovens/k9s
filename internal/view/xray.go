@@ -48,7 +48,7 @@ func NewXray(gvr client.GVR) ResourceViewer {
 	}
 }
 
-// Init initializes the view
+// Init initializes the view.
 func (x *Xray) Init(ctx context.Context) error {
 	x.envFn = x.k9sEnv
 
@@ -90,6 +90,11 @@ func (x *Xray) Init(ctx context.Context) error {
 	x.refreshActions()
 
 	return nil
+}
+
+// InCmdMode checks if prompt is active.
+func (*Xray) InCmdMode() bool {
+	return false
 }
 
 // ExtraHints returns additional hints.
@@ -262,7 +267,12 @@ func (x *Xray) showLogs(spec *xray.NodeSpec, prev bool) {
 		return
 	}
 
-	if err := x.app.inject(NewLog(client.NewGVR("v1/pods"), path, co, prev)); err != nil {
+	opts := dao.LogOptions{
+		Path:      path,
+		Container: co,
+		Previous:  prev,
+	}
+	if err := x.app.inject(NewLog(client.NewGVR("v1/pods"), &opts)); err != nil {
 		x.app.Flash().Err(err)
 	}
 }
@@ -448,9 +458,7 @@ func (x *Xray) gotoCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if len(strings.Split(spec.Path(), "/")) == 1 {
 		return nil
 	}
-	if err := x.app.gotoResource(client.NewGVR(spec.GVR()).R(), spec.Path(), false); err != nil {
-		x.app.Flash().Err(err)
-	}
+	x.app.gotoResource(client.NewGVR(spec.GVR()).R(), spec.Path(), false)
 
 	return nil
 }
@@ -546,7 +554,7 @@ func (x *Xray) hydrate(parent *tview.TreeNode, n *xray.TreeNode) {
 // SetEnvFn sets the custom environment function.
 func (x *Xray) SetEnvFn(EnvFunc) {}
 
-// Refresh updates the view
+// Refresh updates the view.
 func (x *Xray) Refresh() {}
 
 // BufferCompleted indicates the buffer was changed.

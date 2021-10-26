@@ -12,7 +12,7 @@ const (
 	// Running represents a pod running status.
 	Running = "Running"
 
-	// Initialized represents a pod intialized status.
+	// Initialized represents a pod initialized status.
 	Initialized = "Initialized"
 
 	// Completed represents a pod completed status.
@@ -41,7 +41,7 @@ const (
 	// UnknownValue represents an unknown.
 	UnknownValue = "<unknown>"
 
-	// UnsetValue represent an unset value
+	// UnsetValue represent an unset value.
 	UnsetValue = ""
 
 	// ZeroValue represents a zero value.

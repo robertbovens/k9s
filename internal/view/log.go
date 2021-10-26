@@ -7,12 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/atotto/clipboard"
-
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/color"
 	"github.com/derailed/k9s/internal/config"
@@ -32,9 +31,6 @@ const (
 	flushTimeout = 1 * time.Millisecond
 )
 
-// InvalidCharsRX contains invalid filename characters.
-var invalidPathCharsRX = regexp.MustCompile(`[:/\\]+`)
-
 // Log represents a generic log viewer.
 type Log struct {
 	*tview.Flex
@@ -49,14 +45,10 @@ type Log struct {
 var _ model.Component = (*Log)(nil)
 
 // NewLog returns a new viewer.
-func NewLog(gvr client.GVR, path, co string, prev bool) *Log {
+func NewLog(gvr client.GVR, opts *dao.LogOptions) *Log {
 	l := Log{
-		Flex: tview.NewFlex(),
-		model: model.NewLog(
-			gvr,
-			buildLogOpts(path, co, prev, false, config.DefaultLoggerTailCount),
-			flushTimeout,
-		),
+		Flex:  tview.NewFlex(),
+		model: model.NewLog(gvr, opts, flushTimeout),
 	}
 
 	return &l
@@ -72,8 +64,11 @@ func (l *Log) Init(ctx context.Context) (err error) {
 	l.SetBorder(true)
 	l.SetDirection(tview.FlexRow)
 
-	l.indicator = NewLogIndicator(l.app.Config, l.app.Styles)
+	l.indicator = NewLogIndicator(l.app.Config, l.app.Styles, l.isContainerLogView())
 	l.AddItem(l.indicator, 1, 1, false)
+	if !l.model.HasDefaultContainer() {
+		l.indicator.ToggleAllContainers()
+	}
 	l.indicator.Refresh()
 
 	l.logs = NewLogger(l.app)
@@ -101,6 +96,11 @@ func (l *Log) Init(ctx context.Context) (err error) {
 	l.model.ToggleShowTimestamp(l.app.Config.K9s.Logger.ShowTime)
 
 	return nil
+}
+
+// InCmdMode checks if prompt is active.
+func (l *Log) InCmdMode() bool {
+	return l.logs.cmdBuff.InCmdMode()
 }
 
 // LogCleared clears the logs.
@@ -202,6 +202,11 @@ func (l *Log) bindKeys() {
 		tcell.KeyCtrlS:  ui.NewKeyAction("Save", l.SaveCmd, true),
 		ui.KeyC:         ui.NewKeyAction("Copy", l.cpCmd, true),
 	})
+	if l.model.HasDefaultContainer() {
+		l.logs.Actions().Set(ui.KeyActions{
+			ui.KeyA: ui.NewKeyAction("Toggle AllContainers", l.toggleAllContainers, true),
+		})
+	}
 }
 
 func (l *Log) resetCmd(evt *tcell.EventKey) *tcell.EventKey {
@@ -269,6 +274,7 @@ var EOL = []byte{'\n'}
 
 // Flush write logs to viewer.
 func (l *Log) Flush(lines [][]byte) {
+	log.Debug().Msgf("LINES [%d]%d", runtime.NumGoroutine(), len(strings.Split(l.logs.GetText(true), "\n")))
 	if !l.indicator.AutoScroll() {
 		return
 	}
@@ -289,6 +295,17 @@ func (l *Log) sinceCmd(a int) func(evt *tcell.EventKey) *tcell.EventKey {
 		l.updateTitle()
 		return nil
 	}
+}
+
+func (l *Log) toggleAllContainers(evt *tcell.EventKey) *tcell.EventKey {
+	if l.app.InCmdMode() {
+		return evt
+	}
+	l.indicator.ToggleAllContainers()
+	l.model.ToggleAllContainers()
+	l.updateTitle()
+
+	return nil
 }
 
 func (l *Log) filterCmd(evt *tcell.EventKey) *tcell.EventKey {
@@ -321,24 +338,18 @@ func (l *Log) cpCmd(*tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
-func sanitizeFilename(name string) string {
-	processedString := invalidPathCharsRX.ReplaceAllString(name, "-")
-
-	return processedString
-}
-
 func ensureDir(dir string) error {
 	return os.MkdirAll(dir, 0744)
 }
 
 func saveData(cluster, name, data string) (string, error) {
-	dir := filepath.Join(config.K9sDumpDir, sanitizeFilename(cluster))
+	dir := filepath.Join(config.K9sDumpDir, dao.SanitizeFilename(cluster))
 	if err := ensureDir(dir); err != nil {
 		return "", err
 	}
 
 	now := time.Now().UnixNano()
-	fName := fmt.Sprintf("%s-%d.log", sanitizeFilename(name), now)
+	fName := fmt.Sprintf("%s-%d.log", dao.SanitizeFilename(name), now)
 
 	path := filepath.Join(dir, fName)
 	mod := os.O_CREATE | os.O_WRONLY
@@ -346,7 +357,6 @@ func saveData(cluster, name, data string) (string, error) {
 	if err != nil {
 		log.Error().Err(err).Msgf("LogFile create %s", path)
 		return "", nil
-
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -419,17 +429,13 @@ func (l *Log) toggleFullScreenCmd(evt *tcell.EventKey) *tcell.EventKey {
 func (l *Log) goFullScreen() {
 	l.SetFullScreen(l.indicator.FullScreen())
 	l.Box.SetBorder(!l.indicator.FullScreen())
+	if l.indicator.FullScreen() {
+		l.logs.SetBorderPadding(0, 0, 0, 0)
+	} else {
+		l.logs.SetBorderPadding(0, 0, 1, 1)
+	}
 }
 
-// ----------------------------------------------------------------------------
-// Helpers...
-
-func buildLogOpts(path, co string, prevLogs, showTime bool, tailLineCount int) dao.LogOptions {
-	return dao.LogOptions{
-		Path:          path,
-		Container:     co,
-		Lines:         int64(tailLineCount),
-		Previous:      prevLogs,
-		ShowTimestamp: showTime,
-	}
+func (l *Log) isContainerLogView() bool {
+	return l.model.HasDefaultContainer()
 }

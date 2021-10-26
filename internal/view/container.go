@@ -8,6 +8,7 @@ import (
 
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
+	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/gdamore/tcell/v2"
@@ -25,7 +26,7 @@ type Container struct {
 // NewContainer returns a new container view.
 func NewContainer(gvr client.GVR) ResourceViewer {
 	c := Container{}
-	c.ResourceViewer = NewLogsExtender(NewBrowser(gvr), c.selectedContainer)
+	c.ResourceViewer = NewLogsExtender(NewBrowser(gvr), c.logOptions)
 	c.SetEnvFn(c.k9sEnv)
 	c.GetTable().SetEnterFn(c.viewLogs)
 	c.GetTable().SetColorerFn(render.Container{}.ColorerFunc())
@@ -90,9 +91,24 @@ func (c *Container) k9sEnv() Env {
 	return env
 }
 
-func (c *Container) selectedContainer() string {
-	tokens := strings.Split(c.GetTable().GetSelectedItem(), "/")
-	return tokens[0]
+func (c *Container) logOptions(prev bool) (*dao.LogOptions, error) {
+	path := c.GetTable().GetSelectedItem()
+	if path == "" {
+		return nil, errors.New("nothing selected")
+	}
+
+	cfg := c.App().Config.K9s.Logger
+	opts := dao.LogOptions{
+		Path:            c.GetTable().Path,
+		Container:       path,
+		Lines:           int64(cfg.TailCount),
+		SinceSeconds:    cfg.SinceSeconds,
+		SingleContainer: true,
+		ShowTimestamp:   cfg.ShowTime,
+		Previous:        prev,
+	}
+
+	return &opts, nil
 }
 
 func (c *Container) viewLogs(app *App, model ui.Tabular, gvr, path string) {
@@ -126,14 +142,14 @@ func (c *Container) portForwardContext(ctx context.Context) context.Context {
 }
 
 func (c *Container) shellCmd(evt *tcell.EventKey) *tcell.EventKey {
-	sel := c.GetTable().GetSelectedItem()
-	if sel == "" {
+	path := c.GetTable().GetSelectedItem()
+	if path == "" {
 		return evt
 	}
 
 	c.Stop()
 	defer c.Start()
-	shellIn(c.App(), c.GetTable().Path, sel)
+	shellIn(c.App(), c.GetTable().Path, path)
 
 	return nil
 }
@@ -166,7 +182,7 @@ func (c *Container) portFwdCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if !ok {
 		return nil
 	}
-	ShowPortForwards(c, c.GetTable().Path, ports, startFwdCB)
+	ShowPortForwards(c, c.GetTable().Path, ports, "", startFwdCB)
 
 	return nil
 }
@@ -177,8 +193,8 @@ func (c *Container) isForwardable(path string) ([]string, bool) {
 		return nil, false
 	}
 
-	cc := po.Spec.Containers
 	var co *v1.Container
+	cc := po.Spec.Containers
 	for i := range cc {
 		if cc[i].Name == path {
 			co = &cc[i]
@@ -214,6 +230,14 @@ func (c *Container) isForwardable(path string) ([]string, bool) {
 	}
 
 	pp := make([]string, 0, len(ports))
+	container, port, ok := parsePFAnn(po.Annotations[AnnDefaultPF])
+	if ok && container == path {
+		if index := indexOfPort(ports, port); index != -1 {
+			pp = append(pp, path+"/"+port)
+			ports = append(ports[:index], ports[index+1:]...)
+		}
+	}
+
 	for _, p := range ports {
 		if !isTCPPort(p) {
 			continue
@@ -226,4 +250,17 @@ func (c *Container) isForwardable(path string) ([]string, bool) {
 	}
 
 	return pp, true
+}
+
+func indexOfPort(pp []string, port string) int {
+	for i, p := range pp {
+		tokens := strings.Split(p, ":")
+		if len(tokens) == 2 {
+			if tokens[0] == port || tokens[1] == port {
+				return i
+			}
+		}
+	}
+
+	return -1
 }

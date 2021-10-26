@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"flag"
 	"fmt"
 	"runtime/debug"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/klog"
 )
 
 const (
@@ -41,27 +39,9 @@ func init() {
 	rootCmd.AddCommand(versionCmd(), infoCmd())
 	initK9sFlags()
 	initK8sFlags()
-
-	var flags flag.FlagSet
-	klog.InitFlags(&flags)
-	if err := flags.Set("logtostderr", "false"); err != nil {
-		panic(err)
-	}
-	if err := flags.Set("alsologtostderr", "false"); err != nil {
-		panic(err)
-	}
-	if err := flags.Set("stderrthreshold", "fatal"); err != nil {
-		panic(err)
-	}
-	if err := flags.Set("v", "0"); err != nil {
-		panic(err)
-	}
-	if err := flags.Set("log_file", config.K9sLogs); err != nil {
-		panic(err)
-	}
 }
 
-// Execute root command
+// Execute root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		log.Panic().Err(err)
@@ -108,16 +88,13 @@ func loadConfiguration() *config.Config {
 	}
 
 	k9sCfg.K9s.OverrideHeadless(*k9sFlags.Headless)
+	k9sCfg.K9s.OverrideLogoless(*k9sFlags.Logoless)
 	k9sCfg.K9s.OverrideCrumbsless(*k9sFlags.Crumbsless)
 	k9sCfg.K9s.OverrideReadOnly(*k9sFlags.ReadOnly)
 	k9sCfg.K9s.OverrideWrite(*k9sFlags.Write)
 	k9sCfg.K9s.OverrideCommand(*k9sFlags.Command)
 
-	if isBoolSet(k9sFlags.AllNamespaces) && k9sCfg.SetActiveNamespace(client.AllNamespaces) != nil {
-		log.Error().Msg("Setting active namespace")
-	}
-
-	if err := k9sCfg.Refine(k8sFlags); err != nil {
+	if err := k9sCfg.Refine(k8sFlags, k9sFlags); err != nil {
 		log.Error().Err(err).Msgf("refine failed")
 	}
 	conn, err := client.InitConnection(k8sCfg)
@@ -139,10 +116,6 @@ func loadConfiguration() *config.Config {
 	}
 
 	return k9sCfg
-}
-
-func isBoolSet(b *bool) bool {
-	return b != nil && *b
 }
 
 func parseLevel(level string) zerolog.Level {
@@ -179,6 +152,12 @@ func initK9sFlags() {
 		"headless",
 		false,
 		"Turn K9s header off",
+	)
+	rootCmd.Flags().BoolVar(
+		k9sFlags.Logoless,
+		"logoless",
+		false,
+		"Turn K9s logo off",
 	)
 	rootCmd.Flags().BoolVar(
 		k9sFlags.Crumbsless,
