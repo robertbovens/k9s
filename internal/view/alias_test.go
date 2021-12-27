@@ -59,10 +59,10 @@ type buffL struct {
 	changed int
 }
 
-func (b *buffL) BufferChanged(s string) {
+func (b *buffL) BufferChanged(_, _ string) {
 	b.changed++
 }
-func (b *buffL) BufferCompleted(s string) {}
+func (b *buffL) BufferCompleted(_, _ string) {}
 
 func (b *buffL) BufferActive(state bool, kind model.BufferKind) {
 	b.active++
@@ -88,8 +88,8 @@ func (k ks) CurrentNamespaceName() (string, error) {
 	return "test", nil
 }
 
-func (k ks) ClusterNames() ([]string, error) {
-	return []string{"test"}, nil
+func (k ks) ClusterNames() (map[string]struct{}, error) {
+	return map[string]struct{}{"test": {}}, nil
 }
 
 func (k ks) NamespaceNames(nn []v1.Namespace) []string {

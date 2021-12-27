@@ -1,7 +1,7 @@
 package config
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v2"
@@ -18,7 +18,8 @@ type ViewConfigListener interface {
 
 // ViewSetting represents a view configuration.
 type ViewSetting struct {
-	Columns []string `yaml:"columns"`
+	Columns    []string `yaml:"columns"`
+	SortColumn string   `yaml:"sortColumn"`
 }
 
 // ViewSettings represent a collection of view configurations.
@@ -56,7 +57,7 @@ func (v *CustomView) Reset() {
 
 // Load loads view configurations.
 func (v *CustomView) Load(path string) error {
-	raw, err := ioutil.ReadFile(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}

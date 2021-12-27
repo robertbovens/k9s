@@ -25,14 +25,14 @@ func TestParsePFAnn(t *testing.T) {
 		ok            bool
 	}{
 		"named-port": {
-			ann:  "fred:blee",
-			co:   "fred",
+			ann:  "c1:blee",
+			co:   "c1",
 			port: "blee",
 			ok:   true,
 		},
 		"port-num": {
-			ann:  "fred:1234",
-			co:   "fred",
+			ann:  "c1:1234",
+			co:   "c1",
 			port: "1234",
 			ok:   true,
 		},
@@ -85,7 +85,7 @@ func TestFwFQN(t *testing.T) {
 	uu := map[string]struct {
 		po, co, e string
 	}{
-		"cool": {po: "p1", co: "c1", e: "p1:c1"},
+		"cool": {po: "p1", co: "c1", e: "p1|c1"},
 	}
 
 	for k := range uu {

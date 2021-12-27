@@ -3,22 +3,22 @@ package view
 import (
 	"fmt"
 	"math"
-	"regexp"
+	"strconv"
 	"strings"
 
-	"github.com/derailed/k9s/internal/client"
-	"github.com/derailed/k9s/internal/render"
+	"github.com/derailed/k9s/internal/port"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/tview"
+	"github.com/rs/zerolog/log"
 )
 
 const portForwardKey = "portforward"
 
 // PortForwardCB represents a port-forward callback function.
-type PortForwardCB func(v ResourceViewer, path, co string, mapper []client.PortTunnel)
+type PortForwardCB func(ResourceViewer, string, port.PortTunnels) error
 
 // ShowPortForwards pops a port forwarding configuration dialog.
-func ShowPortForwards(v ResourceViewer, path string, ports []string, ann string, okFn PortForwardCB) {
+func ShowPortForwards(v ResourceViewer, path string, ports port.ContainerPortSpecs, aa port.Annotations, okFn PortForwardCB) {
 	styles := v.App().Styles.Dialog()
 
 	f := tview.NewForm()
@@ -32,36 +32,27 @@ func ShowPortForwards(v ResourceViewer, path string, ports []string, ann string,
 
 	address := v.App().Config.CurrentCluster().PortForwardAddress
 
-	var p1, p2 string
-	if len(ports) > 0 {
-		p1, p2 = ports[0], extractPort(ports[0])
-		if len(ann) != 0 {
-			container, port, ok := parsePFAnn(ann)
-			if ok {
-				for _, p := range ports {
-					co, po, portNum := parsePort(p)
-					if co == container && port == po || port == portNum {
-						p1, p2 = p, extractPort(p)
-						break
-					}
-				}
-			}
-		}
+	pf, err := aa.PreferredPorts(ports)
+	if err != nil {
+		log.Warn().Err(err).Msgf("unable to resolve ports on %s", path)
 	}
+
+	p1, p2 := pf.ToPortSpec(ports)
 	fieldLen := int(math.Max(30, float64(len(p1))))
-	f.AddInputField("Container Port:", p1, fieldLen, nil, func(p string) {
-		p1 = p
-	})
-	field := f.GetFormItemByLabel("Container Port:").(*tview.InputField)
-	if field.GetText() == "" {
-		field.SetPlaceholder("Enter a container name/port")
+	f.AddInputField("Container Port:", p1, fieldLen, nil, nil)
+	f.AddInputField("Local Port:", p2, fieldLen, nil, nil)
+	coField := f.GetFormItemByLabel("Container Port:").(*tview.InputField)
+	loField := f.GetFormItemByLabel("Local Port:").(*tview.InputField)
+	if coField.GetText() == "" {
+		coField.SetPlaceholder("Enter a container name::port")
 	}
-	f.AddInputField("Local Port:", p2, fieldLen, nil, func(p string) {
-		p2 = p
+	coField.SetChangedFunc(func(s string) {
+		port := extractPort(s)
+		loField.SetText(port)
+		p2 = port
 	})
-	field = f.GetFormItemByLabel("Local Port:").(*tview.InputField)
-	if field.GetText() == "" {
-		field.SetPlaceholder("Enter a local port")
+	if loField.GetText() == "" {
+		loField.SetPlaceholder("Enter a local port")
 	}
 	f.AddInputField("Address:", address, fieldLen, nil, func(h string) {
 		address = h
@@ -76,21 +67,18 @@ func ShowPortForwards(v ResourceViewer, path string, ports []string, ann string,
 	}
 
 	f.AddButton("OK", func() {
-		pp1 := strings.Split(p1, ",")
-		pp2 := strings.Split(p2, ",")
-		if len(pp1) == 0 || len(pp1) != len(pp2) {
+		if coField.GetText() == "" || loField.GetText() == "" {
 			v.App().Flash().Err(fmt.Errorf("container to local port mismatch"))
 			return
 		}
-		var tt []client.PortTunnel
-		for i := range pp1 {
-			tt = append(tt, client.PortTunnel{
-				Address:       address,
-				LocalPort:     pp2[i],
-				ContainerPort: extractPort(pp1[i]),
-			})
+		tt, err := port.ToTunnels(address, coField.GetText(), loField.GetText())
+		if err != nil {
+			v.App().Flash().Err(err)
+			return
 		}
-		okFn(v, path, extractContainer(pp1[0]), tt)
+		if err := okFn(v, path, tt); err != nil {
+			v.App().Flash().Err(err)
+		}
 	})
 	pages := v.App().Content.Pages
 	f.AddButton("Cancel", func() {
@@ -108,7 +96,7 @@ func ShowPortForwards(v ResourceViewer, path string, ports []string, ann string,
 	modal := tview.NewModalForm("<PortForward>", f)
 	msg := path
 	if len(ports) > 1 {
-		msg += "\n\nExposed Ports:\n" + strings.Join(ports, "\n")
+		msg += "\n\nExposed Ports:\n" + ports.Dump()
 	}
 	modal.SetText(msg)
 	modal.SetTextColor(styles.FgColor.Color())
@@ -131,36 +119,17 @@ func DismissPortForwards(v ResourceViewer, p *ui.Pages) {
 // ----------------------------------------------------------------------------
 // Helpers...
 
-func parsePort(p string) (string, string, string) {
-	rx := regexp.MustCompile(`\A([\w|-]+)/?([\w|-]+)?:?(\d+)?(╱UDP)?\z`)
-	mm := rx.FindStringSubmatch(p)
-	if len(mm) != 5 {
-		return "", "", ""
-	}
-
-	return mm[1], mm[2], mm[3]
-}
-
-func extractPort(p string) string {
-	rx := regexp.MustCompile(`\A([\w|-]+)/?([\w|-]+)?:?(\d+)?(╱UDP)?\z`)
-	mm := rx.FindStringSubmatch(p)
-	if len(mm) != 5 {
-		return p
-	}
-	for i := 3; i > 0; i-- {
-		if mm[i] != "" {
-			return mm[i]
+func extractPort(port string) string {
+	tokens := strings.Split(port, "::")
+	if len(tokens) < 2 {
+		ports := strings.Split(port, ",")
+		for _, t := range ports {
+			if _, err := strconv.Atoi(strings.TrimSpace(t)); err != nil {
+				return ""
+			}
 		}
-	}
-	return p
-}
-
-func extractContainer(p string) string {
-	tokens := strings.Split(p, ":")
-	if len(tokens) != 2 {
-		return render.NAValue
+		return port
 	}
 
-	co, _ := client.Namespaced(tokens[0])
-	return co
+	return tokens[1]
 }

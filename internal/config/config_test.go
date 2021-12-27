@@ -2,10 +2,11 @@ package config_test
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/config"
 	m "github.com/petergtz/pegomock"
 	"github.com/rs/zerolog"
@@ -59,11 +60,10 @@ func TestConfigRefine(t *testing.T) {
 		t.Run(k, func(t *testing.T) {
 			mc := NewMockConnection()
 			m.When(mc.ValidNamespaces()).ThenReturn(namespaces(), nil)
-			mk := NewMockKubeSettings()
-			m.When(mk.NamespaceNames(namespaces())).ThenReturn([]string{"default"})
+			mk := newMockSettings(u.flags)
 			cfg := config.NewConfig(mk)
 
-			err := cfg.Refine(u.flags, nil)
+			err := cfg.Refine(u.flags, nil, client.NewConfig(u.flags))
 			if u.issue {
 				assert.NotNil(t, err)
 			} else {
@@ -87,7 +87,6 @@ func TestConfigValidate(t *testing.T) {
 	cfg.SetConnection(mc)
 	assert.Nil(t, cfg.Load("testdata/k9s.yml"))
 	cfg.Validate()
-	// mc.VerifyWasCalledOnce().ValidNamespaces()
 }
 
 func TestConfigLoad(t *testing.T) {
@@ -199,7 +198,7 @@ func TestConfigSaveFile(t *testing.T) {
 	m.When(mk.CurrentContextName()).ThenReturn("minikube", nil)
 	m.When(mk.CurrentClusterName()).ThenReturn("minikube", nil)
 	m.When(mk.CurrentNamespaceName()).ThenReturn("default", nil)
-	m.When(mk.ClusterNames()).ThenReturn([]string{"minikube", "fred", "blee"}, nil)
+	m.When(mk.ClusterNames()).ThenReturn(map[string]struct{}{"minikube": {}, "fred": {}, "blee": {}}, nil)
 	m.When(mk.NamespaceNames(namespaces())).ThenReturn([]string{"default"})
 
 	cfg := config.NewConfig(mk)
@@ -216,7 +215,7 @@ func TestConfigSaveFile(t *testing.T) {
 	err := cfg.SaveFile(path)
 	assert.Nil(t, err)
 
-	raw, err := ioutil.ReadFile(path)
+	raw, err := os.ReadFile(path)
 	assert.Nil(t, err)
 	assert.Equal(t, expectedConfig, string(raw))
 }
@@ -229,7 +228,7 @@ func TestConfigReset(t *testing.T) {
 	m.When(mk.CurrentContextName()).ThenReturn("blee", nil)
 	m.When(mk.CurrentClusterName()).ThenReturn("blee", nil)
 	m.When(mk.CurrentNamespaceName()).ThenReturn("default", nil)
-	m.When(mk.ClusterNames()).ThenReturn([]string{"blee"}, nil)
+	m.When(mk.ClusterNames()).ThenReturn(map[string]struct{}{"blee": {}}, nil)
 	m.When(mk.NamespaceNames(namespaces())).ThenReturn([]string{"default"})
 
 	cfg := config.NewConfig(mk)
@@ -242,7 +241,7 @@ func TestConfigReset(t *testing.T) {
 	err := cfg.SaveFile(path)
 	assert.Nil(t, err)
 
-	raw, err := ioutil.ReadFile(path)
+	raw, err := os.ReadFile(path)
 	assert.Nil(t, err)
 	assert.Equal(t, resetConfig, string(raw))
 }
@@ -255,6 +254,24 @@ func TestSetup(t *testing.T) {
 		fmt.Println("Boom!", m, i)
 	})
 }
+
+type mockSettings struct {
+	flags *genericclioptions.ConfigFlags
+}
+
+var _ config.KubeSettings = (*mockSettings)(nil)
+
+func newMockSettings(flags *genericclioptions.ConfigFlags) *mockSettings {
+	return &mockSettings{flags: flags}
+}
+func (m *mockSettings) CurrentContextName() (string, error) {
+	return *m.flags.Context, nil
+}
+func (m *mockSettings) CurrentClusterName() (string, error) { return "", nil }
+func (m *mockSettings) CurrentNamespaceName() (string, error) {
+	return *m.flags.Namespace, nil
+}
+func (m *mockSettings) ClusterNames() (map[string]struct{}, error) { return nil, nil }
 
 // ----------------------------------------------------------------------------
 // Test Data...
@@ -347,6 +364,7 @@ var expectedConfig = `k9s:
     memory:
       critical: 90
       warn: 70
+  screenDumpDir: /tmp
 `
 
 var resetConfig = `k9s:
@@ -393,4 +411,5 @@ var resetConfig = `k9s:
     memory:
       critical: 90
       warn: 70
+  screenDumpDir: /tmp
 `

@@ -2,16 +2,17 @@ package cmd
 
 import (
 	"fmt"
-	"runtime/debug"
-
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/color"
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/view"
+	"github.com/mattn/go-colorable"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"os"
+	"runtime/debug"
 )
 
 const (
@@ -33,6 +34,8 @@ var (
 		Long:  longAppDesc,
 		Run:   run,
 	}
+
+	out = colorable.NewColorableStdout()
 )
 
 func init() {
@@ -49,6 +52,17 @@ func Execute() {
 }
 
 func run(cmd *cobra.Command, args []string) {
+	config.EnsurePath(*k9sFlags.LogFile, config.DefaultDirMod)
+	mod := os.O_CREATE | os.O_APPEND | os.O_WRONLY
+	file, err := os.OpenFile(*k9sFlags.LogFile, mod, config.DefaultFileMod)
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if file != nil {
+			_ = file.Close()
+		}
+	}()
 	defer func() {
 		if err := recover(); err != nil {
 			log.Error().Msgf("Boom! %v", err)
@@ -58,6 +72,8 @@ func run(cmd *cobra.Command, args []string) {
 			fmt.Println(color.Colorize(fmt.Sprintf("%v.", err), color.LightGray))
 		}
 	}()
+
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: file})
 
 	zerolog.SetGlobalLevel(parseLevel(*k9sFlags.LogLevel))
 	app := view.NewApp(loadConfiguration())
@@ -93,26 +109,27 @@ func loadConfiguration() *config.Config {
 	k9sCfg.K9s.OverrideReadOnly(*k9sFlags.ReadOnly)
 	k9sCfg.K9s.OverrideWrite(*k9sFlags.Write)
 	k9sCfg.K9s.OverrideCommand(*k9sFlags.Command)
+	k9sCfg.K9s.OverrideScreenDumpDir(*k9sFlags.ScreenDumpDir)
 
-	if err := k9sCfg.Refine(k8sFlags, k9sFlags); err != nil {
+	if err := k9sCfg.Refine(k8sFlags, k9sFlags, k8sCfg); err != nil {
 		log.Error().Err(err).Msgf("refine failed")
 	}
 	conn, err := client.InitConnection(k8sCfg)
 	k9sCfg.SetConnection(conn)
 	if err != nil {
 		log.Error().Err(err).Msgf("failed to connect to cluster")
-	} else {
-		// Try to access server version if that fail. Connectivity issue?
-		if !k9sCfg.GetConnection().CheckConnectivity() {
-			log.Panic().Msgf("K9s can't connect to cluster")
-		}
-		if !k9sCfg.GetConnection().ConnectionOK() {
-			panic("No connectivity")
-		}
-		log.Info().Msg("✅ Kubernetes connectivity")
-		if err := k9sCfg.Save(); err != nil {
-			log.Error().Err(err).Msg("Config save")
-		}
+		return k9sCfg
+	}
+	// Try to access server version if that fail. Connectivity issue?
+	if !k9sCfg.GetConnection().CheckConnectivity() {
+		log.Panic().Msgf("Cannot connect to cluster %s", k9sCfg.K9s.CurrentCluster)
+	}
+	if !k9sCfg.GetConnection().ConnectionOK() {
+		panic("No connectivity")
+	}
+	log.Info().Msg("✅ Kubernetes connectivity")
+	if err := k9sCfg.Save(); err != nil {
+		log.Error().Err(err).Msg("Config save")
 	}
 
 	return k9sCfg
@@ -120,6 +137,8 @@ func loadConfiguration() *config.Config {
 
 func parseLevel(level string) zerolog.Level {
 	switch level {
+	case "trace":
+		return zerolog.TraceLevel
 	case "debug":
 		return zerolog.DebugLevel
 	case "warn":
@@ -145,7 +164,13 @@ func initK9sFlags() {
 		k9sFlags.LogLevel,
 		"logLevel", "l",
 		config.DefaultLogLevel,
-		"Specify a log level (info, warn, debug, error, fatal, panic, trace)",
+		"Specify a log level (info, warn, debug, trace, error)",
+	)
+	rootCmd.Flags().StringVarP(
+		k9sFlags.LogFile,
+		"logFile", "",
+		config.DefaultLogFile,
+		"Specify the log file",
 	)
 	rootCmd.Flags().BoolVar(
 		k9sFlags.Headless,
@@ -189,10 +214,17 @@ func initK9sFlags() {
 		false,
 		"Sets write mode by overriding the readOnly configuration setting",
 	)
+	rootCmd.Flags().StringVar(
+		k9sFlags.ScreenDumpDir,
+		"screen-dump-dir",
+		"",
+		"Sets a path to a dir for a screen dumps",
+	)
+	rootCmd.Flags()
 }
 
 func initK8sFlags() {
-	k8sFlags = genericclioptions.NewConfigFlags(false)
+	k8sFlags = genericclioptions.NewConfigFlags(client.UsePersistentConfig)
 
 	rootCmd.Flags().StringVar(
 		k8sFlags.KubeConfig,

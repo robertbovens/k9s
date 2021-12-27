@@ -164,7 +164,7 @@ func (t *Table) Peek() render.TableData {
 }
 
 func (t *Table) updater(ctx context.Context) {
-	defer log.Debug().Msgf("TABLE-MODEL canceled -- %q", t.gvr)
+	defer log.Debug().Msgf("TABLE-UPDATER canceled -- %q", t.gvr)
 
 	bf := backoff.NewExponentialBackOff()
 	bf.InitialInterval, bf.MaxElapsedTime = initRefreshRate, maxReaderRetryInterval
@@ -240,7 +240,7 @@ func (t *Table) reconcile(ctx context.Context) error {
 
 	var rows render.Rows
 	if len(oo) > 0 {
-		if _, ok := meta.Renderer.(*render.Generic); ok {
+		if meta.Renderer.IsGeneric() {
 			table, ok := oo[0].(*metav1beta1.Table)
 			if !ok {
 				return fmt.Errorf("expecting a meta table but got %T", oo[0])
@@ -300,8 +300,14 @@ func hydrate(ns string, oo []runtime.Object, rr render.Rows, re Renderer) error 
 	return nil
 }
 
+type Generic interface {
+	SetTable(*metav1beta1.Table)
+	Header(string) render.Header
+	Render(interface{}, string, *render.Row) error
+}
+
 func genericHydrate(ns string, table *metav1beta1.Table, rr render.Rows, re Renderer) error {
-	gr, ok := re.(*render.Generic)
+	gr, ok := re.(Generic)
 	if !ok {
 		return fmt.Errorf("expecting generic renderer but got %T", re)
 	}

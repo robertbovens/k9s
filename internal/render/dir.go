@@ -12,6 +12,11 @@ import (
 // Dir renders a directory entry to screen.
 type Dir struct{}
 
+// IsGeneric identifies a generic handler.
+func (Dir) IsGeneric() bool {
+	return false
+}
+
 // ColorerFunc colors a resource row.
 func (Dir) ColorerFunc() ColorerFunc {
 	return func(ns string, _ Header, re RowEvent) tcell.Color {
@@ -35,10 +40,10 @@ func (Dir) Render(o interface{}, ns string, r *Row) error {
 	}
 
 	name := "🦄 "
-	if d.Info.IsDir() {
+	if d.Entry.IsDir() {
 		name = "📁 "
 	}
-	name += d.Info.Name()
+	name += d.Entry.Name()
 	r.ID, r.Fields = d.Path, append(r.Fields, name)
 
 	return nil
@@ -49,8 +54,8 @@ func (Dir) Render(o interface{}, ns string, r *Row) error {
 
 // DirRes represents an alias resource.
 type DirRes struct {
-	Info os.FileInfo
-	Path string
+	Entry os.DirEntry
+	Path  string
 }
 
 // GetObjectKind returns a schema object.

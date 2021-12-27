@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -32,6 +33,7 @@ const (
 
 type shellOpts struct {
 	clear, background bool
+	pipes             []string
 	binary            string
 	banner            string
 	args              []string
@@ -96,40 +98,41 @@ func execute(opts shellOpts) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
-		cancel()
-		clearScreen()
+		if !opts.background {
+			cancel()
+			clearScreen()
+		}
 	}()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
+	go func(cancel context.CancelFunc) {
+		defer log.Debug().Msgf("SIGNAL_GOR - BAILED!!")
 		select {
 		case <-sigChan:
-			log.Debug().Msg("Command canceled with signal!")
+			log.Debug().Msgf("Command canceled with signal!")
 			cancel()
 		case <-ctx.Done():
-			return
+			log.Debug().Msgf("SIGNAL Context CANCELED!")
 		}
-	}()
+	}(cancel)
 
-	log.Debug().Msgf("Running command> %s %s", opts.binary, strings.Join(opts.args, " "))
-	cmd := exec.Command(opts.binary, opts.args...)
+	cmds := make([]*exec.Cmd, 0, 1)
+	cmd := exec.CommandContext(ctx, opts.binary, opts.args...)
+	log.Debug().Msgf("RUNNING> %s", cmd)
+	cmds = append(cmds, cmd)
 
-	var err error
-	if opts.background {
-		err = cmd.Start()
-	} else {
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		_, _ = cmd.Stdout.Write([]byte(opts.banner))
-		err = cmd.Run()
+	for _, p := range opts.pipes {
+		tokens := strings.Split(p, " ")
+		if len(tokens) < 2 {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, tokens[0], tokens[1:]...)
+		log.Debug().Msgf("\t| %s", cmd)
+		cmds = append(cmds, cmd)
 	}
 
-	select {
-	case <-ctx.Done():
-		return errors.New("canceled by operator")
-	default:
-		return err
-	}
+	return pipe(ctx, opts, cmds...)
 }
 
 func runKu(a *App, opts shellOpts) (string, error) {
@@ -196,14 +199,17 @@ func ssh(a *App, node string) error {
 	if err := launchShellPod(a, node); err != nil {
 		return err
 	}
-	ns := a.Config.K9s.ActiveCluster().ShellPod.Namespace
+
+	cl := a.Config.K9s.ActiveCluster()
+	ns := cl.ShellPod.Namespace
 	sshIn(a, client.FQN(ns, k9sShellPodName()), k9sShell)
 
 	return nil
 }
 
 func sshIn(a *App, fqn, co string) {
-	cfg := a.Config.K9s.ActiveCluster().ShellPod
+	cl := a.Config.K9s.ActiveCluster()
+	cfg := cl.ShellPod
 	os, err := getPodOS(a.factory, fqn)
 	if err != nil {
 		log.Warn().Err(err).Msgf("os detect failed")
@@ -229,12 +235,13 @@ func sshIn(a *App, fqn, co string) {
 }
 
 func nukeK9sShell(a *App) error {
-	cl := a.Config.K9s.CurrentCluster
-	if !a.Config.K9s.Clusters[cl].FeatureGates.NodeShell {
+	clName := a.Config.K9s.CurrentCluster
+	if !a.Config.K9s.Clusters[clName].FeatureGates.NodeShell {
 		return nil
 	}
 
-	ns := a.Config.K9s.ActiveCluster().ShellPod.Namespace
+	cl := a.Config.K9s.ActiveCluster()
+	ns := cl.ShellPod.Namespace
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
@@ -253,8 +260,9 @@ func nukeK9sShell(a *App) error {
 
 func launchShellPod(a *App, node string) error {
 	a.Flash().Infof("Launching node shell on %s...", node)
-	ns := a.Config.K9s.ActiveCluster().ShellPod.Namespace
-	spec := k9sShellPod(node, a.Config.K9s.ActiveCluster().ShellPod)
+	cl := a.Config.K9s.ActiveCluster()
+	ns := cl.ShellPod.Namespace
+	spec := k9sShellPod(node, cl.ShellPod)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -357,4 +365,62 @@ func asResource(r config.Limits) v1.ResourceRequirements {
 			v1.ResourceMemory: resource.MustParse(r[v1.ResourceMemory]),
 		},
 	}
+}
+
+func pipe(ctx context.Context, opts shellOpts, cmds ...*exec.Cmd) error {
+	if len(cmds) == 0 {
+		return nil
+	}
+
+	if len(cmds) == 1 {
+		cmd := cmds[0]
+		if opts.background {
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, log.Logger, log.Logger
+			return cmd.Start()
+		}
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		// BOZO!!
+		//cmd.SysProcAttr = &syscall.SysProcAttr{
+		////	//Setpgid:    true,
+		////	//Setctty:    true,
+		//	Foreground: true,
+		//}
+		_, _ = cmd.Stdout.Write([]byte(opts.banner))
+
+		log.Debug().Msgf("Running Start")
+		err := cmd.Run()
+		log.Debug().Msgf("Running Done")
+		return err
+
+		// BOZO!!
+		// select {
+		// case <-ctx.Done():
+		// 	return errors.New("canceled by operator")
+		// default:
+		// 	log.Debug().Msgf("PIPE RETURN %s", err)
+		// 	return err
+		// }
+	}
+
+	last := len(cmds) - 1
+	for i := 0; i < len(cmds); i++ {
+		cmds[i].Stderr = os.Stderr
+		if i+1 < len(cmds) {
+			r, w := io.Pipe()
+			cmds[i].Stdout, cmds[i+1].Stdin = w, r
+		}
+	}
+	cmds[last].Stdout = os.Stdout
+
+	for _, cmd := range cmds {
+		log.Debug().Msgf("Starting CMD %s", cmd)
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+	}
+
+	log.Debug().Msgf("WAITING!!!")
+	err := cmds[len(cmds)-1].Wait()
+	log.Debug().Msgf("DONE WAITING!!!")
+	return err
 }

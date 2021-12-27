@@ -34,15 +34,15 @@ var supportedMetricsAPIVersions = []string{"v1beta1"}
 
 // APIClient represents a Kubernetes api client.
 type APIClient struct {
-	client       kubernetes.Interface
-	dClient      dynamic.Interface
-	nsClient     dynamic.NamespaceableResourceInterface
-	mxsClient    *versioned.Clientset
-	cachedClient *disk.CachedDiscoveryClient
-	config       *Config
-	mx           sync.Mutex
-	cache        *cache.LRUExpireCache
-	connOK       bool
+	client, logClient kubernetes.Interface
+	dClient           dynamic.Interface
+	nsClient          dynamic.NamespaceableResourceInterface
+	mxsClient         *versioned.Clientset
+	cachedClient      *disk.CachedDiscoveryClient
+	config            *Config
+	mx                sync.Mutex
+	cache             *cache.LRUExpireCache
+	connOK            bool
 }
 
 // NewTestAPIClient for testing ONLY!!
@@ -63,7 +63,7 @@ func InitConnection(config *Config) (*APIClient, error) {
 	}
 	err := a.supportsMetricsResources()
 	if err != nil {
-		log.Error().Err(err).Msgf("Checking metrics-server")
+		log.Error().Err(err).Msgf("Fail to locate metrics-server")
 	}
 	if errors.Is(err, noMetricServerErr) || errors.Is(err, metricsUnsupportedErr) {
 		return &a, nil
@@ -89,6 +89,7 @@ func makeSAR(ns, gvr string) *authorizationv1.SelfSubjectAccessReview {
 			ResourceAttributes: &authorizationv1.ResourceAttributes{
 				Namespace:   ns,
 				Group:       res.Group,
+				Version:     res.Version,
 				Resource:    res.Resource,
 				Subresource: spec.SubResource(),
 			},
@@ -120,11 +121,11 @@ func (a *APIClient) IsActiveNamespace(ns string) bool {
 
 // ActiveNamespace returns the current namespace.
 func (a *APIClient) ActiveNamespace() string {
-	ns, err := a.CurrentNamespaceName()
-	if err != nil {
-		return AllNamespaces
+	if ns, err := a.CurrentNamespaceName(); err == nil {
+		return ns
 	}
-	return ns
+
+	return AllNamespaces
 }
 
 func (a *APIClient) clearCache() {
@@ -162,6 +163,7 @@ func (a *APIClient) CanI(ns, gvr string, verbs []string) (auth bool, err error) 
 	for _, v := range verbs {
 		sar.Spec.ResourceAttributes.Verb = v
 		resp, err := client.Create(ctx, sar, metav1.CreateOptions{})
+		log.Trace().Msgf("[CAN] %s(%s) %v <<%v>>", gvr, verbs, resp, err)
 		if err != nil {
 			log.Warn().Err(err).Msgf("  Dial Failed!")
 			a.cache.Add(key, false, cacheExpiry)
@@ -261,7 +263,7 @@ func (a *APIClient) CheckConnectivity() bool {
 			a.reset()
 		}
 	} else {
-		log.Error().Err(err).Msgf("K9s can't connect to cluster")
+		log.Error().Err(err).Msgf("can't connect to cluster")
 		a.connOK = false
 	}
 
@@ -277,6 +279,27 @@ func (a *APIClient) Config() *Config {
 func (a *APIClient) HasMetrics() bool {
 	err := a.supportsMetricsResources()
 	return err == nil
+}
+
+// LogDial returns a handle to api server for logs.
+func (a *APIClient) DialLogs() (kubernetes.Interface, error) {
+	if !a.connOK {
+		return nil, errors.New("No connection to dial")
+	}
+	if a.logClient != nil {
+		return a.logClient, nil
+	}
+
+	cfg, err := a.RestConfig()
+	if err != nil {
+		return nil, err
+	}
+	cfg.Timeout = 0
+	if a.logClient, err = kubernetes.NewForConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	return a.logClient, nil
 }
 
 // Dial returns a handle to api server or die.
@@ -301,11 +324,7 @@ func (a *APIClient) Dial() (kubernetes.Interface, error) {
 
 // RestConfig returns a rest api client.
 func (a *APIClient) RestConfig() (*restclient.Config, error) {
-	cfg, err := a.config.RESTConfig()
-	if err != nil {
-		return nil, err
-	}
-	return cfg, nil
+	return a.config.RESTConfig()
 }
 
 // CachedDiscovery returns a cached discovery client.
@@ -397,7 +416,7 @@ func (a *APIClient) reset() {
 	a.config.reset()
 	a.cache = cache.NewLRUExpireCache(cacheSize)
 	a.client, a.dClient, a.nsClient, a.mxsClient = nil, nil, nil, nil
-	a.cachedClient = nil
+	a.cachedClient, a.logClient = nil, nil
 	a.connOK = true
 }
 
@@ -430,7 +449,6 @@ func (a *APIClient) supportsMetricsResources() error {
 	}
 	apiGroups, err := dial.ServerGroups()
 	if err != nil {
-		log.Warn().Err(err).Msgf("Unable to fetch APIGroups")
 		return err
 	}
 	for _, grp := range apiGroups.Groups {

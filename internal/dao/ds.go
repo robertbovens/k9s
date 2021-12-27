@@ -17,7 +17,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/kubectl/pkg/polymorphichelpers"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 var (
@@ -41,7 +43,12 @@ func (d *DaemonSet) IsHappy(ds appsv1.DaemonSet) bool {
 
 // Restart a DaemonSet rollout.
 func (d *DaemonSet) Restart(ctx context.Context, path string) error {
-	ds, err := d.GetInstance(path)
+	o, err := d.Factory.Get("apps/v1/daemonsets", path, true, labels.Everything())
+	if err != nil {
+		return err
+	}
+	var ds appsv1.DaemonSet
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &ds)
 	if err != nil {
 		return err
 	}
@@ -53,12 +60,22 @@ func (d *DaemonSet) Restart(ctx context.Context, path string) error {
 	if !auth {
 		return fmt.Errorf("user is not authorized to restart a daemonset")
 	}
-	update, err := polymorphichelpers.ObjectRestarterFn(ds)
+
+	dial, err := d.Client().Dial()
 	if err != nil {
 		return err
 	}
 
-	dial, err := d.Client().Dial()
+	before, err := runtime.Encode(scheme.Codecs.LegacyCodec(appsv1.SchemeGroupVersion), &ds)
+	if err != nil {
+		return err
+	}
+
+	after, err := polymorphichelpers.ObjectRestarterFn(&ds)
+	if err != nil {
+		return err
+	}
+	diff, err := strategicpatch.CreateTwoWayMergePatch(before, after, ds)
 	if err != nil {
 		return err
 	}
@@ -66,62 +83,67 @@ func (d *DaemonSet) Restart(ctx context.Context, path string) error {
 		ctx,
 		ds.Name,
 		types.StrategicMergePatchType,
-		update,
+		diff,
 		metav1.PatchOptions{},
 	)
+
 	return err
 }
 
 // TailLogs tail logs for all pods represented by this DaemonSet.
-func (d *DaemonSet) TailLogs(ctx context.Context, c LogChan, opts *LogOptions) error {
+func (d *DaemonSet) TailLogs(ctx context.Context, opts *LogOptions) ([]LogChan, error) {
 	ds, err := d.GetInstance(opts.Path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if ds.Spec.Selector == nil || len(ds.Spec.Selector.MatchLabels) == 0 {
-		return fmt.Errorf("no valid selector found on daemonset %q", opts.Path)
+		return nil, fmt.Errorf("no valid selector found on daemonset %q", opts.Path)
 	}
 
-	return podLogs(ctx, c, ds.Spec.Selector.MatchLabels, opts)
+	return podLogs(ctx, ds.Spec.Selector.MatchLabels, opts)
 }
 
-func podLogs(ctx context.Context, c LogChan, sel map[string]string, opts *LogOptions) error {
+func podLogs(ctx context.Context, sel map[string]string, opts *LogOptions) ([]LogChan, error) {
 	f, ok := ctx.Value(internal.KeyFactory).(*watch.Factory)
 	if !ok {
-		return errors.New("expecting a context factory")
+		return nil, errors.New("expecting a context factory")
 	}
 	ls, err := metav1.ParseToLabelSelector(toSelector(sel))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	lsel, err := metav1.LabelSelectorAsSelector(ls)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ns, _ := client.Namespaced(opts.Path)
 	oo, err := f.List("v1/pods", ns, true, lsel)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	opts.MultiPods = true
 
 	po := Pod{}
 	po.Init(f, client.NewGVR("v1/pods"))
+
+	outs := make([]LogChan, 0, len(oo))
 	for _, o := range oo {
-		var pod v1.Pod
-		err := runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &pod)
-		if err != nil {
-			return err
+		u, ok := o.(*unstructured.Unstructured)
+		if !ok {
+			return nil, fmt.Errorf("expected unstructured got %t", o)
 		}
 		opts = opts.Clone()
-		opts.Path = client.FQN(pod.Namespace, pod.Name)
-		if err := po.TailLogs(ctx, c, opts); err != nil {
-			return err
+		opts.Path = client.FQN(u.GetNamespace(), u.GetName())
+		cc, err := po.TailLogs(ctx, opts)
+		if err != nil {
+			return nil, err
 		}
+		outs = append(outs, cc...)
 	}
-	return nil
+
+	return outs, nil
 }
 
 // Pod returns a pod victim by name.

@@ -132,7 +132,7 @@ func extractApp(ctx context.Context) (*App, error) {
 // AsKey maps a string representation of a key to a tcell key.
 func asKey(key string) (tcell.Key, error) {
 	for k, v := range tcell.KeyNames {
-		if v == key {
+		if key == v {
 			return k, nil
 		}
 	}
@@ -142,7 +142,7 @@ func asKey(key string) (tcell.Key, error) {
 
 // FwFQN returns a fully qualified ns/name:container id.
 func fwFQN(po, co string) string {
-	return po + ":" + co
+	return po + "|" + co
 }
 
 func isTCPPort(p string) bool {

@@ -84,9 +84,6 @@ var Registry = map[string]ResourceMeta{
 	"v1/endpoints": {
 		Renderer: &render.Endpoints{},
 	},
-	"v1/events": {
-		Renderer: &render.Event{},
-	},
 	"v1/pods": {
 		DAO:          &dao.Pod{},
 		Renderer:     &render.Pod{},
@@ -112,6 +109,10 @@ var Registry = map[string]ResourceMeta{
 	},
 	"v1/persistentvolumeclaims": {
 		Renderer: &render.PersistentVolumeClaim{},
+	},
+	"v1/events": {
+		DAO:      &dao.Table{},
+		Renderer: &render.Event{},
 	},
 
 	// Apps...

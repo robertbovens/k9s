@@ -14,7 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/kubectl/pkg/polymorphichelpers"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 var (
@@ -64,22 +66,22 @@ func (d *Deployment) Scale(ctx context.Context, path string, replicas int32) err
 
 // Restart a Deployment rollout.
 func (d *Deployment) Restart(ctx context.Context, path string) error {
-	dp, err := d.Load(d.Factory, path)
+	o, err := d.Factory.Get("apps/v1/deployments", path, true, labels.Everything())
+	if err != nil {
+		return err
+	}
+	var dp appsv1.Deployment
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &dp)
 	if err != nil {
 		return err
 	}
 
-	ns, _ := client.Namespaced(path)
-	auth, err := d.Client().CanI(ns, "apps/v1/deployments", []string{client.PatchVerb})
+	auth, err := d.Client().CanI(dp.Namespace, "apps/v1/deployments", []string{client.PatchVerb})
 	if err != nil {
 		return err
 	}
 	if !auth {
 		return fmt.Errorf("user is not authorized to restart a deployment")
-	}
-	update, err := polymorphichelpers.ObjectRestarterFn(dp)
-	if err != nil {
-		return err
 	}
 
 	dial, err := d.Client().Dial()
@@ -87,27 +89,41 @@ func (d *Deployment) Restart(ctx context.Context, path string) error {
 		return err
 	}
 
+	before, err := runtime.Encode(scheme.Codecs.LegacyCodec(appsv1.SchemeGroupVersion), &dp)
+	if err != nil {
+		return err
+	}
+
+	after, err := polymorphichelpers.ObjectRestarterFn(&dp)
+	if err != nil {
+		return err
+	}
+	diff, err := strategicpatch.CreateTwoWayMergePatch(before, after, dp)
+	if err != nil {
+		return err
+	}
 	_, err = dial.AppsV1().Deployments(dp.Namespace).Patch(
 		ctx,
 		dp.Name,
 		types.StrategicMergePatchType,
-		update,
+		diff,
 		metav1.PatchOptions{},
 	)
+
 	return err
 }
 
 // TailLogs tail logs for all pods represented by this Deployment.
-func (d *Deployment) TailLogs(ctx context.Context, c LogChan, opts *LogOptions) error {
+func (d *Deployment) TailLogs(ctx context.Context, opts *LogOptions) ([]LogChan, error) {
 	dp, err := d.Load(d.Factory, opts.Path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if dp.Spec.Selector == nil || len(dp.Spec.Selector.MatchLabels) == 0 {
-		return fmt.Errorf("No valid selector found on Deployment %s", opts.Path)
+		return nil, fmt.Errorf("No valid selector found on Deployment %s", opts.Path)
 	}
 
-	return podLogs(ctx, c, dp.Spec.Selector.MatchLabels, opts)
+	return podLogs(ctx, dp.Spec.Selector.MatchLabels, opts)
 }
 
 // Pod returns a pod victim by name.

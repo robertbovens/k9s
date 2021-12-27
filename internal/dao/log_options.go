@@ -2,7 +2,6 @@ package dao
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/derailed/k9s/internal/client"
@@ -12,12 +11,14 @@ import (
 
 // LogOptions represents logger options.
 type LogOptions struct {
+	CreateDuration   time.Duration
 	Path             string
 	Container        string
 	DefaultContainer string
 	SinceTime        string
 	Lines            int64
 	SinceSeconds     int64
+	Head             bool
 	Previous         bool
 	SingleContainer  bool
 	MultiPods        bool
@@ -27,7 +28,10 @@ type LogOptions struct {
 
 // Info returns the option pod and container info.
 func (o *LogOptions) Info() string {
-	return fmt.Sprintf("%q::%q", o.Path, o.Container)
+	if len(o.Container) != 0 {
+		return fmt.Sprintf("%s (%s)", o.Path, o.Container)
+	}
+	return o.Path
 }
 
 // Clone clones options.
@@ -38,6 +42,7 @@ func (o *LogOptions) Clone() *LogOptions {
 		DefaultContainer: o.DefaultContainer,
 		Lines:            o.Lines,
 		Previous:         o.Previous,
+		Head:             o.Head,
 		SingleContainer:  o.SingleContainer,
 		MultiPods:        o.MultiPods,
 		ShowTimestamp:    o.ShowTimestamp,
@@ -77,6 +82,13 @@ func (o *LogOptions) ToPodLogOptions() *v1.PodLogOptions {
 		Previous:   o.Previous,
 		TailLines:  &o.Lines,
 	}
+	if o.Head {
+		var maxBytes int64 = 5000
+		opts.Follow = false
+		opts.TailLines, opts.SinceSeconds, opts.SinceTime = nil, nil, nil
+		opts.LimitBytes = &maxBytes
+		return &opts
+	}
 	if o.SinceSeconds < 0 {
 		return &opts
 	}
@@ -96,23 +108,8 @@ func (o *LogOptions) ToPodLogOptions() *v1.PodLogOptions {
 	return &opts
 }
 
-// FixedSizeName returns a normalize fixed size pod name if possible.
-func (o *LogOptions) FixedSizeName() string {
-	_, n := client.Namespaced(o.Path)
-	tokens := strings.Split(n, "-")
-	if len(tokens) < 3 {
-		return n
-	}
-	var s []string
-	for i := 0; i < len(tokens)-1; i++ {
-		s = append(s, tokens[i])
-	}
-
-	return Truncate(strings.Join(s, "-"), 15) + "-" + tokens[len(tokens)-1]
-}
-
-// DecorateLog add a log header to display po/co information along with the log message.
-func (o *LogOptions) DecorateLog(bytes []byte) *LogItem {
+// ToLogItem add a log header to display po/co information along with the log message.
+func (o *LogOptions) ToLogItem(bytes []byte) *LogItem {
 	item := NewLogItem(bytes)
 	if len(bytes) == 0 {
 		return item
@@ -128,5 +125,12 @@ func (o *LogOptions) DecorateLog(bytes []byte) *LogItem {
 		item.Container = o.Container
 	}
 
+	return item
+}
+
+func (o *LogOptions) ToErrLogItem(err error) *LogItem {
+	t := time.Now().UTC().Format(time.RFC3339Nano)
+	item := NewLogItem([]byte(fmt.Sprintf("%s [orange::b]%s[::-]\n", t, err)))
+	item.IsError = true
 	return item
 }

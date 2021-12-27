@@ -15,7 +15,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/kubectl/pkg/polymorphichelpers"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 var (
@@ -65,26 +67,39 @@ func (s *StatefulSet) Scale(ctx context.Context, path string, replicas int32) er
 
 // Restart a StatefulSet rollout.
 func (s *StatefulSet) Restart(ctx context.Context, path string) error {
-	sts, err := s.getStatefulSet(path)
+	o, err := s.Factory.Get("apps/v1/statefulsets", path, true, labels.Everything())
+	if err != nil {
+		return err
+	}
+	var sts appsv1.StatefulSet
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &sts)
 	if err != nil {
 		return err
 	}
 
-	ns, _ := client.Namespaced(path)
-	auth, err := s.Client().CanI(ns, "apps/v1/statefulsets", []string{client.PatchVerb})
+	auth, err := s.Client().CanI(sts.Namespace, "apps/v1/statefulsets", []string{client.PatchVerb})
 	if err != nil {
 		return err
 	}
 	if !auth {
-		return fmt.Errorf("user is not authorized to update statefulsets")
+		return fmt.Errorf("user is not authorized to restart a statefulset")
 	}
 
-	update, err := polymorphichelpers.ObjectRestarterFn(sts)
+	dial, err := s.Client().Dial()
 	if err != nil {
 		return err
 	}
 
-	dial, err := s.Client().Dial()
+	before, err := runtime.Encode(scheme.Codecs.LegacyCodec(appsv1.SchemeGroupVersion), &sts)
+	if err != nil {
+		return err
+	}
+
+	after, err := polymorphichelpers.ObjectRestarterFn(&sts)
+	if err != nil {
+		return err
+	}
+	diff, err := strategicpatch.CreateTwoWayMergePatch(before, after, sts)
 	if err != nil {
 		return err
 	}
@@ -92,10 +107,12 @@ func (s *StatefulSet) Restart(ctx context.Context, path string) error {
 		ctx,
 		sts.Name,
 		types.StrategicMergePatchType,
-		update,
+		diff,
 		metav1.PatchOptions{},
 	)
+
 	return err
+
 }
 
 // Load returns a statefulset instance.
@@ -115,16 +132,16 @@ func (*StatefulSet) Load(f Factory, fqn string) (*appsv1.StatefulSet, error) {
 }
 
 // TailLogs tail logs for all pods represented by this StatefulSet.
-func (s *StatefulSet) TailLogs(ctx context.Context, c LogChan, opts *LogOptions) error {
+func (s *StatefulSet) TailLogs(ctx context.Context, opts *LogOptions) ([]LogChan, error) {
 	sts, err := s.getStatefulSet(opts.Path)
 	if err != nil {
-		return errors.New("expecting StatefulSet resource")
+		return nil, errors.New("expecting StatefulSet resource")
 	}
 	if sts.Spec.Selector == nil || len(sts.Spec.Selector.MatchLabels) == 0 {
-		return fmt.Errorf("No valid selector found on StatefulSet %s", opts.Path)
+		return nil, fmt.Errorf("No valid selector found on StatefulSet %s", opts.Path)
 	}
 
-	return podLogs(ctx, c, sts.Spec.Selector.MatchLabels, opts)
+	return podLogs(ctx, sts.Spec.Selector.MatchLabels, opts)
 }
 
 // Pod returns a pod victim by name.

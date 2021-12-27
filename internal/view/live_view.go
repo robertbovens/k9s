@@ -119,11 +119,11 @@ func (v *LiveView) ResourceChanged(lines []string, matches fuzzy.Matches) {
 }
 
 // BufferChanged indicates the buffer was changed.
-func (v *LiveView) BufferChanged(s string) {}
+func (v *LiveView) BufferChanged(_, _ string) {}
 
 // BufferCompleted indicates input was accepted.
-func (v *LiveView) BufferCompleted(s string) {
-	v.model.Filter(s)
+func (v *LiveView) BufferCompleted(text, _ string) {
+	v.model.Filter(text)
 }
 
 // BufferActive indicates the buff activity changed.
@@ -332,7 +332,7 @@ func (v *LiveView) resetCmd(evt *tcell.EventKey) *tcell.EventKey {
 }
 
 func (v *LiveView) saveCmd(evt *tcell.EventKey) *tcell.EventKey {
-	if path, err := saveYAML(v.app.Config.K9s.CurrentCluster, v.title, v.text.GetText(true)); err != nil {
+	if path, err := saveYAML(v.app.Config.K9s.GetScreenDumpDir(), v.app.Config.K9s.CurrentCluster, v.title, v.text.GetText(true)); err != nil {
 		v.app.Flash().Err(err)
 	} else {
 		v.app.Flash().Infof("Log %s saved successfully!", path)

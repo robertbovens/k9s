@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -21,10 +19,8 @@ const K9sConfig = "K9SCONFIG"
 var (
 	// K9sConfigFile represents K9s config file location.
 	K9sConfigFile = filepath.Join(K9sHome(), "config.yml")
-	// K9sLogs represents K9s log.
-	K9sLogs = filepath.Join(os.TempDir(), fmt.Sprintf("k9s-%s.log", MustK9sUser()))
-	// K9sDumpDir represents a directory where K9s screen dumps will be persisted.
-	K9sDumpDir = filepath.Join(os.TempDir(), fmt.Sprintf("k9s-screens-%s", MustK9sUser()))
+	// K9sDefaultScreenDumpDir represents a default directory where K9s screen dumps will be persisted.
+	K9sDefaultScreenDumpDir = filepath.Join(os.TempDir(), fmt.Sprintf("k9s-screens-%s", MustK9sUser()))
 )
 
 type (
@@ -40,18 +36,14 @@ type (
 		CurrentNamespaceName() (string, error)
 
 		// ClusterNames() returns all available cluster names.
-		ClusterNames() ([]string, error)
-
-		// NamespaceNames returns all available namespace names.
-		NamespaceNames(nn []v1.Namespace) []string
+		ClusterNames() (map[string]struct{}, error)
 	}
 
 	// Config tracks K9s configuration options.
 	Config struct {
-		K9s        *K9s `yaml:"k9s"`
-		client     client.Connection
-		settings   KubeSettings
-		overrideNS bool
+		K9s      *K9s `yaml:"k9s"`
+		client   client.Connection
+		settings KubeSettings
 	}
 )
 
@@ -60,6 +52,7 @@ func K9sHome() string {
 	if env := os.Getenv(K9sConfig); env != "" {
 		return env
 	}
+
 	xdgK9sHome, err := xdg.ConfigFile("k9s")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Unable to create configuration directory for k9s")
@@ -74,47 +67,51 @@ func NewConfig(ks KubeSettings) *Config {
 }
 
 // Refine the configuration based on cli args.
-func (c *Config) Refine(flags *genericclioptions.ConfigFlags, k9sFlags *Flags) error {
-	cfg, err := flags.ToRawKubeConfigLoader().RawConfig()
-	if err != nil {
-		return err
-	}
+func (c *Config) Refine(flags *genericclioptions.ConfigFlags, k9sFlags *Flags, cfg *client.Config) error {
 	if isSet(flags.Context) {
 		c.K9s.CurrentContext = *flags.Context
 	} else {
-		c.K9s.CurrentContext = cfg.CurrentContext
+		context, err := cfg.CurrentContextName()
+		if err != nil {
+			return err
+		}
+		c.K9s.CurrentContext = context
 	}
 	log.Debug().Msgf("Active Context %q", c.K9s.CurrentContext)
 	if c.K9s.CurrentContext == "" {
 		return errors.New("Invalid kubeconfig context detected")
 	}
-	context, ok := cfg.Contexts[c.K9s.CurrentContext]
+	cc, err := cfg.Contexts()
+	if err != nil {
+		return err
+	}
+	context, ok := cc[c.K9s.CurrentContext]
 	if !ok {
 		return fmt.Errorf("The specified context %q does not exists in kubeconfig", c.K9s.CurrentContext)
 	}
 	c.K9s.CurrentCluster = context.Cluster
-	c.K9s.ActivateCluster()
+	c.K9s.ActivateCluster(context.Namespace)
 
-	var ns string
-	var override bool
+	var ns = client.DefaultNamespace
 	if k9sFlags != nil && IsBoolSet(k9sFlags.AllNamespaces) {
-		ns, override = client.NamespaceAll, true
+		ns = client.NamespaceAll
 	} else if isSet(flags.Namespace) {
-		ns, override = *flags.Namespace, true
-	} else if context.Namespace != "" {
+		ns = *flags.Namespace
+	} else if isSet(flags.Context) {
 		ns = context.Namespace
+	} else {
+		ns = c.K9s.ActiveCluster().Namespace.Active
 	}
 
-	if ns != "" {
-		if err := c.SetActiveNamespace(ns); err != nil {
-			return err
-		}
-		flags.Namespace, c.overrideNS = &ns, override
+	if err := c.SetActiveNamespace(ns); err != nil {
+		return err
 	}
+	flags.Namespace = &ns
 
 	if isSet(flags.ClusterName) {
 		c.K9s.CurrentCluster = *flags.ClusterName
 	}
+	EnsurePath(c.K9s.GetScreenDumpDir(), DefaultDirMod)
 
 	return nil
 }
@@ -140,12 +137,19 @@ func (c *Config) ActiveNamespace() string {
 		return "default"
 	}
 	cl := c.CurrentCluster()
+	if cl != nil && cl.Namespace != nil {
+		return cl.Namespace.Active
+	}
 	if cl == nil {
 		cl = NewCluster()
 		c.K9s.Clusters[c.K9s.CurrentCluster] = cl
 	}
-	if cl.Namespace != nil {
-		return cl.Namespace.Active
+	if ns, err := c.settings.CurrentNamespaceName(); err == nil && ns != "" {
+		if cl.Namespace == nil {
+			cl.Namespace = NewNamespace()
+		}
+		cl.Namespace.Active = ns
+		return ns
 	}
 
 	return "default"
@@ -154,9 +158,6 @@ func (c *Config) ActiveNamespace() string {
 // ValidateFavorites ensure favorite ns are legit.
 func (c *Config) ValidateFavorites() {
 	cl := c.K9s.ActiveCluster()
-	if cl == nil {
-		cl = NewCluster()
-	}
 	cl.Validate(c.client, c.settings)
 	cl.Namespace.Validate(c.client, c.settings)
 }
@@ -164,16 +165,14 @@ func (c *Config) ValidateFavorites() {
 // FavNamespaces returns fav namespaces in the current cluster.
 func (c *Config) FavNamespaces() []string {
 	cl := c.K9s.ActiveCluster()
-	if cl == nil {
-		return nil
-	}
-	return c.K9s.ActiveCluster().Namespace.Favorites
+
+	return cl.Namespace.Favorites
 }
 
 // SetActiveNamespace set the active namespace in the current cluster.
 func (c *Config) SetActiveNamespace(ns string) error {
-	if c.K9s.ActiveCluster() != nil {
-		return c.K9s.ActiveCluster().Namespace.SetActive(ns, c.settings)
+	if cl := c.K9s.ActiveCluster(); cl != nil {
+		return cl.Namespace.SetActive(ns, c.settings)
 	}
 	err := errors.New("no active cluster. unable to set active namespace")
 	log.Error().Err(err).Msg("SetActiveNamespace")
@@ -183,11 +182,11 @@ func (c *Config) SetActiveNamespace(ns string) error {
 
 // ActiveView returns the active view in the current cluster.
 func (c *Config) ActiveView() string {
-	if c.K9s.ActiveCluster() == nil {
+	cl := c.K9s.ActiveCluster()
+	if cl == nil {
 		return defaultView
 	}
-
-	cmd := c.K9s.ActiveCluster().View.Active
+	cmd := cl.View.Active
 	if c.K9s.manualCommand != nil && *c.K9s.manualCommand != "" {
 		cmd = *c.K9s.manualCommand
 	}
@@ -197,8 +196,7 @@ func (c *Config) ActiveView() string {
 
 // SetActiveView set the currently cluster active view.
 func (c *Config) SetActiveView(view string) {
-	cl := c.K9s.ActiveCluster()
-	if cl != nil {
+	if cl := c.K9s.ActiveCluster(); cl != nil {
 		cl.View.Active = view
 	}
 }
@@ -211,14 +209,11 @@ func (c *Config) GetConnection() client.Connection {
 // SetConnection set an api server connection.
 func (c *Config) SetConnection(conn client.Connection) {
 	c.client = conn
-	if c.client != nil && c.client.Config() != nil {
-		c.client.Config().OverrideNS = c.overrideNS
-	}
 }
 
 // Load K9s configuration from file.
 func (c *Config) Load(path string) error {
-	f, err := ioutil.ReadFile(path)
+	f, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -252,7 +247,7 @@ func (c *Config) SaveFile(path string) error {
 		log.Error().Msgf("[Config] Unable to save K9s config file: %v", err)
 		return err
 	}
-	return ioutil.WriteFile(path, cfg, 0644)
+	return os.WriteFile(path, cfg, 0644)
 }
 
 // Validate the configuration.

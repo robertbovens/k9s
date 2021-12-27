@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/derailed/k9s/internal"
@@ -31,6 +32,7 @@ type Browser struct {
 	accessor   dao.Accessor
 	contextFn  ContextFunc
 	cancelFn   context.CancelFunc
+	mx         sync.RWMutex
 }
 
 // NewBrowser returns a new browser.
@@ -125,8 +127,12 @@ func (b *Browser) SetInstance(path string) {
 // Start initializes browser updates.
 func (b *Browser) Start() {
 	b.app.Config.ValidateFavorites()
-	if err := b.app.Config.Save(); err != nil {
-		log.Error().Err(err).Msgf("Config Save")
+	ns := b.app.Config.ActiveNamespace()
+	if n := b.GetModel().GetNamespace(); !client.IsClusterScoped(n) {
+		ns = n
+	}
+	if err := b.app.switchNS(ns); err != nil {
+		log.Error().Err(err).Msgf("ns switch failed")
 	}
 
 	b.Stop()
@@ -134,28 +140,32 @@ func (b *Browser) Start() {
 	b.Table.Start()
 	b.CmdBuff().AddListener(b)
 	if err := b.GetModel().Watch(b.prepareContext()); err != nil {
-		log.Error().Err(err).Msgf("Watcher failed for %s", b.GVR())
+		b.App().Flash().Err(fmt.Errorf("Watcher failed for %s -- %w", b.GVR(), err))
 	}
 }
 
 // Stop terminates browser updates.
 func (b *Browser) Stop() {
-	if b.cancelFn != nil {
-		b.cancelFn()
-		b.cancelFn = nil
+	b.mx.Lock()
+	{
+		if b.cancelFn != nil {
+			b.cancelFn()
+			b.cancelFn = nil
+		}
 	}
+	b.mx.Unlock()
 	b.GetModel().RemoveListener(b)
 	b.CmdBuff().RemoveListener(b)
 	b.Table.Stop()
 }
 
 // BufferChanged indicates the buffer was changed.
-func (b *Browser) BufferChanged(s string) {}
+func (b *Browser) BufferChanged(_, _ string) {}
 
 // BufferCompleted indicates input was accepted.
-func (b *Browser) BufferCompleted(s string) {
-	if ui.IsLabelSelector(s) {
-		b.GetModel().SetLabelFilter(ui.TrimLabelSelector(s))
+func (b *Browser) BufferCompleted(text, _ string) {
+	if ui.IsLabelSelector(text) {
+		b.GetModel().SetLabelFilter(ui.TrimLabelSelector(text))
 	} else {
 		b.GetModel().SetLabelFilter("")
 	}
@@ -213,7 +223,12 @@ func (b *Browser) Aliases() []string {
 
 // TableDataChanged notifies view new data is available.
 func (b *Browser) TableDataChanged(data render.TableData) {
-	if !b.app.ConOK() || b.cancelFn == nil || !b.app.IsRunning() {
+	var cancel context.CancelFunc
+	b.mx.RLock()
+	cancel = b.cancelFn
+	b.mx.RUnlock()
+
+	if !b.app.ConOK() || cancel == nil || !b.app.IsRunning() {
 		return
 	}
 
@@ -422,7 +437,7 @@ func (b *Browser) setNamespace(ns string) {
 	if !b.meta.Namespaced {
 		ns = client.ClusterScope
 	}
-	b.GetModel().SetNamespace(client.CleanseNamespace(ns))
+	b.GetModel().SetNamespace(ns)
 }
 
 func (b *Browser) defaultContext() context.Context {

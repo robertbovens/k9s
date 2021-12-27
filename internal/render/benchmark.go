@@ -3,7 +3,6 @@ package render
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strconv"
@@ -25,7 +24,9 @@ var (
 )
 
 // Benchmark renders a benchmarks to screen.
-type Benchmark struct{}
+type Benchmark struct {
+	Base
+}
 
 // ColorerFunc colors a resource row.
 func (b Benchmark) ColorerFunc() ColorerFunc {
@@ -97,7 +98,7 @@ func (Benchmark) diagnose(ns string, ff Fields) error {
 // Helpers...
 
 func (Benchmark) readFile(file string) (string, error) {
-	data, err := ioutil.ReadFile(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return "", err
 	}
