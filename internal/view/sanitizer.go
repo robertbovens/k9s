@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -11,9 +14,11 @@ import (
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/k9s/internal/xray"
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -65,7 +70,7 @@ func (s *Sanitizer) Init(ctx context.Context) error {
 	s.SetBorderColor(s.app.Styles.Frame().Border.FgColor.Color())
 	s.SetBorderFocusColor(s.app.Styles.Frame().Border.FocusColor.Color())
 	s.SetGraphicsColor(s.app.Styles.Xray().GraphicColor.Color())
-	s.SetTitle(strings.Title(s.gvr.R()))
+	s.SetTitle(cases.Title(language.Und, cases.NoLower).String(s.gvr.R()))
 
 	s.model.SetNamespace(client.CleanseNamespace(s.app.Config.ActiveNamespace()))
 	s.model.AddListener(s)
@@ -401,7 +406,7 @@ func (s *Sanitizer) UpdateTitle() {
 }
 
 func (s *Sanitizer) styleTitle() string {
-	base := strings.Title(s.gvr.R())
+	base := cases.Title(language.Und, cases.NoLower).String(s.gvr.R())
 	ns := s.model.GetNamespace()
 	if client.IsAllNamespaces(ns) {
 		ns = client.NamespaceAll

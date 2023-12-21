@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render_test
 
 import (
@@ -65,7 +68,7 @@ func BenchmarkContainerRender(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		c.Render(cres, "blee", &r)
+		_ = c.Render(cres, "blee", &r)
 	}
 }
 

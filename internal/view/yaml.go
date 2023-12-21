@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -9,7 +12,6 @@ import (
 	"time"
 
 	"github.com/derailed/k9s/internal/config"
-	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/tview"
 	"github.com/rs/zerolog/log"
 )
@@ -27,7 +29,6 @@ const (
 
 func colorizeYAML(style config.Yaml, raw string) string {
 	lines := strings.Split(tview.Escape(raw), "\n")
-
 	fullFmt := strings.Replace(yamlFullFmt, "[key", "["+style.KeyColor.String(), 1)
 	fullFmt = strings.Replace(fullFmt, "[colon", "["+style.ColonColor.String(), 1)
 	fullFmt = strings.Replace(fullFmt, "[val", "["+style.ValueColor.String(), 1)
@@ -61,15 +62,13 @@ func enableRegion(str string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(str, "<<<", "["), ">>>", "]")
 }
 
-func saveYAML(screenDumpDir, cluster, name, data string) (string, error) {
-	dir := filepath.Join(screenDumpDir, dao.SanitizeFilename(cluster))
+func saveYAML(screenDumpDir, context, name, data string) (string, error) {
+	dir := filepath.Join(screenDumpDir, config.SanitizeFilename(context))
 	if err := ensureDir(dir); err != nil {
 		return "", err
 	}
 
-	now := time.Now().UnixNano()
-	fName := fmt.Sprintf("%s-%d.yml", dao.SanitizeFilename(name), now)
-
+	fName := fmt.Sprintf("%s--%d.yml", config.SanitizeFilename(name), time.Now().Unix())
 	path := filepath.Join(dir, fName)
 	mod := os.O_CREATE | os.O_WRONLY
 	file, err := os.OpenFile(path, mod, 0600)

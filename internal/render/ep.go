@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -22,7 +25,7 @@ func (Endpoints) Header(ns string) Header {
 		HeaderColumn{Name: "NAMESPACE"},
 		HeaderColumn{Name: "NAME"},
 		HeaderColumn{Name: "ENDPOINTS"},
-		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
+		HeaderColumn{Name: "AGE", Time: true},
 	}
 }
 
@@ -30,7 +33,7 @@ func (Endpoints) Header(ns string) Header {
 func (e Endpoints) Render(o interface{}, ns string, r *Row) error {
 	raw, ok := o.(*unstructured.Unstructured)
 	if !ok {
-		return fmt.Errorf("Expected Endpoints, but got %T", o)
+		return fmt.Errorf("expected Endpoints, but got %T", o)
 	}
 	var ep v1.Endpoints
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw.Object, &ep)
@@ -44,7 +47,7 @@ func (e Endpoints) Render(o interface{}, ns string, r *Row) error {
 		ep.Namespace,
 		ep.Name,
 		missing(toEPs(ep.Subsets)),
-		toAge(ep.ObjectMeta.CreationTimestamp),
+		ToAge(ep.GetCreationTimestamp()),
 	}
 
 	return nil

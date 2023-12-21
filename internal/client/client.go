@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package client
 
 import (
@@ -20,7 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
-	versioned "k8s.io/metrics/pkg/client/clientset/versioned"
+	"k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 const (
@@ -31,6 +34,9 @@ const (
 )
 
 var supportedMetricsAPIVersions = []string{"v1beta1"}
+
+// Namespaces tracks a collection of namespace names.
+type Namespaces map[string]struct{}
 
 // APIClient represents a Kubernetes api client.
 type APIClient struct {
@@ -188,8 +194,8 @@ func (a *APIClient) CurrentNamespaceName() (string, error) {
 // ServerVersion returns the current server version info.
 func (a *APIClient) ServerVersion() (*version.Info, error) {
 	if v, ok := a.cache.Get(serverVersion); ok {
-		if version, ok := v.(*version.Info); ok {
-			return version, nil
+		if vi, ok := v.(*version.Info); ok {
+			return vi, nil
 		}
 	}
 	dial, err := a.CachedDiscovery()
@@ -208,6 +214,10 @@ func (a *APIClient) ServerVersion() (*version.Info, error) {
 
 // ValidNamespaces returns all available namespaces.
 func (a *APIClient) ValidNamespaces() ([]v1.Namespace, error) {
+	if a == nil {
+		return nil, fmt.Errorf("validNamespaces: no available client found")
+	}
+
 	if nn, ok := a.cache.Get("validNamespaces"); ok {
 		if nss, ok := nn.([]v1.Namespace); ok {
 			return nss, nil
@@ -242,7 +252,7 @@ func (a *APIClient) CheckConnectivity() bool {
 		}
 	}()
 
-	// Need to reload to pickup any kubeconfig changes.
+	// Need reload to pick up any kubeconfig changes.
 	cfg, err := NewConfig(a.config.flags).RESTConfig()
 	if err != nil {
 		log.Error().Err(err).Msgf("restConfig load failed")
@@ -278,13 +288,16 @@ func (a *APIClient) Config() *Config {
 // HasMetrics checks if the cluster supports metrics.
 func (a *APIClient) HasMetrics() bool {
 	err := a.supportsMetricsResources()
+	if err != nil {
+		log.Debug().Msgf("Metrics server detect failed: %s", err)
+	}
 	return err == nil
 }
 
-// LogDial returns a handle to api server for logs.
+// DialLogs returns a handle to api server for logs.
 func (a *APIClient) DialLogs() (kubernetes.Interface, error) {
 	if !a.connOK {
-		return nil, errors.New("No connection to dial")
+		return nil, errors.New("no connection to dial")
 	}
 	if a.logClient != nil {
 		return a.logClient, nil
@@ -305,7 +318,7 @@ func (a *APIClient) DialLogs() (kubernetes.Interface, error) {
 // Dial returns a handle to api server or die.
 func (a *APIClient) Dial() (kubernetes.Interface, error) {
 	if !a.connOK {
-		return nil, errors.New("No connection to dial")
+		return nil, errors.New("no connection to dial")
 	}
 	if a.client != nil {
 		return a.client, nil
@@ -333,7 +346,7 @@ func (a *APIClient) CachedDiscovery() (*disk.CachedDiscoveryClient, error) {
 	defer a.mx.Unlock()
 
 	if !a.connOK {
-		return nil, errors.New("No connection to cached dial")
+		return nil, errors.New("no connection to cached dial")
 	}
 
 	if a.cachedClient != nil {
@@ -344,6 +357,7 @@ func (a *APIClient) CachedDiscovery() (*disk.CachedDiscoveryClient, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	httpCacheDir := filepath.Join(mustHomeDir(), ".kube", "http-cache")
 	discCacheDir := filepath.Join(mustHomeDir(), ".kube", "cache", "discovery", toHostDir(cfg.Host))
 
@@ -406,7 +420,7 @@ func (a *APIClient) SwitchContext(name string) error {
 	a.mx.Unlock()
 
 	if !a.CheckConnectivity() {
-		return fmt.Errorf("Unable to connect to context %q", name)
+		return fmt.Errorf("unable to connect to context %q", name)
 	}
 
 	return nil
@@ -465,9 +479,9 @@ func (a *APIClient) supportsMetricsResources() error {
 }
 
 func checkMetricsVersion(grp metav1.APIGroup) bool {
-	for _, version := range grp.Versions {
+	for _, v := range grp.Versions {
 		for _, supportedVersion := range supportedMetricsAPIVersions {
-			if version.Version == supportedVersion {
+			if v.Version == supportedVersion {
 				return true
 			}
 		}

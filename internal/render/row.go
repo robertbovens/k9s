@@ -1,11 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/fvbommel/sortorder"
 )
@@ -147,12 +148,13 @@ func (rr Rows) Find(id string) (int, bool) {
 }
 
 // Sort rows based on column index and order.
-func (rr Rows) Sort(col int, asc, isNum, isDur bool) {
+func (rr Rows) Sort(col int, asc, isNum, isDur, isCapacity bool) {
 	t := RowSorter{
 		Rows:       rr,
 		Index:      col,
 		IsNumber:   isNum,
 		IsDuration: isDur,
+		IsCapacity: isCapacity,
 		Asc:        asc,
 	}
 	sort.Sort(t)
@@ -162,10 +164,12 @@ func (rr Rows) Sort(col int, asc, isNum, isDur bool) {
 
 // RowSorter sorts rows.
 type RowSorter struct {
-	Rows                 Rows
-	Index                int
-	IsNumber, IsDuration bool
-	Asc                  bool
+	Rows       Rows
+	Index      int
+	IsNumber   bool
+	IsDuration bool
+	IsCapacity bool
+	Asc        bool
 }
 
 func (s RowSorter) Len() int {
@@ -177,32 +181,51 @@ func (s RowSorter) Swap(i, j int) {
 }
 
 func (s RowSorter) Less(i, j int) bool {
-	return Less(s.Asc, s.IsNumber, s.IsDuration, s.Rows[i].Fields[s.Index], s.Rows[j].Fields[s.Index])
+	v1, v2 := s.Rows[i].Fields[s.Index], s.Rows[j].Fields[s.Index]
+	id1, id2 := s.Rows[i].ID, s.Rows[j].ID
+	less := Less(s.IsNumber, s.IsDuration, s.IsCapacity, id1, id2, v1, v2)
+	if s.Asc {
+		return less
+	}
+	return !less
 }
 
 // ----------------------------------------------------------------------------
 // Helpers...
 
-func toAgeDuration(dur string) string {
-	d, err := time.ParseDuration(dur)
-	if err != nil {
-		return durationToSeconds(dur)
+// Less return true if c1 <= c2.
+func Less(isNumber, isDuration, isCapacity bool, id1, id2, v1, v2 string) bool {
+	var less bool
+	switch {
+	case isNumber:
+		less = lessNumber(v1, v2)
+	case isDuration:
+		less = lessDuration(v1, v2)
+	case isCapacity:
+		less = lessCapacity(v1, v2)
+	default:
+		less = sortorder.NaturalLess(v1, v2)
+	}
+	if v1 == v2 {
+		return sortorder.NaturalLess(id1, id2)
 	}
 
-	return strconv.Itoa(int(d.Seconds()))
+	return less
 }
 
-// Less return true if c1 < c2.
-func Less(asc, isNumber, isDuration bool, c1, c2 string) bool {
-	if isNumber {
-		c1, c2 = strings.Replace(c1, ",", "", -1), strings.Replace(c2, ",", "", -1)
-	}
-	if isDuration {
-		c1, c2 = toAgeDuration(c1), toAgeDuration(c2)
-	}
-	b := sortorder.NaturalLess(c1, c2)
-	if asc {
-		return b
-	}
-	return !b
+func lessDuration(s1, s2 string) bool {
+	d1, d2 := durationToSeconds(s1), durationToSeconds(s2)
+	return d1 <= d2
+}
+
+func lessCapacity(s1, s2 string) bool {
+	c1, c2 := capacityToNumber(s1), capacityToNumber(s2)
+
+	return c1 <= c2
+}
+
+func lessNumber(s1, s2 string) bool {
+	v1, v2 := strings.Replace(s1, ",", "", -1), strings.Replace(s2, ",", "", -1)
+
+	return sortorder.NaturalLess(v1, v2)
 }

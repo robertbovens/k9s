@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package dao
 
 import (
@@ -40,12 +43,12 @@ var (
 
 func scanners() map[string]RefScanner {
 	return map[string]RefScanner{
-		"apps/v1/deployments":    &Deployment{},
-		"apps/v1/statefulsets":   &StatefulSet{},
-		"apps/v1/daemonsets":     &DaemonSet{},
-		"batch/v1/jobs":          &Job{},
-		"batch/v1beta1/cronjobs": &CronJob{},
-		"v1/pods":                &Pod{},
+		"apps/v1/deployments":  &Deployment{},
+		"apps/v1/statefulsets": &StatefulSet{},
+		"apps/v1/daemonsets":   &DaemonSet{},
+		"batch/v1/jobs":        &Job{},
+		"batch/v1/cronjobs":    &CronJob{},
+		"v1/pods":              &Pod{},
 	}
 }
 

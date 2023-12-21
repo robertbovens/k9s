@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package model
 
 import (
@@ -128,7 +131,7 @@ func TestTableGenericHydrate(t *testing.T) {
 	}
 	rr := make([]render.Row, 2)
 	re := render.Generic{}
-	re.SetTable(&tt)
+	re.SetTable("blee", &tt)
 
 	assert.Nil(t, genericHydrate("blee", &tt, rr, &re))
 	assert.Equal(t, 2, len(rr))

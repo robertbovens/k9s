@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/derailed/k9s/internal/render"
 	"github.com/stretchr/testify/assert"
@@ -409,39 +413,25 @@ func TestRowEventsDelete(t *testing.T) {
 
 func TestRowEventsSort(t *testing.T) {
 	uu := map[string]struct {
-		re            render.RowEvents
-		col           int
-		age, num, asc bool
-		e             render.RowEvents
+		re                 render.RowEvents
+		col                int
+		duration, num, asc bool
+		capacity           bool
+		e                  render.RowEvents
 	}{
 		"age_time": {
 			re: render.RowEvents{
-				{Row: render.Row{ID: "A", Fields: render.Fields{"1", "2", "1h10m10.5s"}}},
-				{Row: render.Row{ID: "B", Fields: render.Fields{"0", "2", "10.5s"}}},
-				{Row: render.Row{ID: "C", Fields: render.Fields{"10", "2", "3h20m5.2s"}}},
+				{Row: render.Row{ID: "A", Fields: render.Fields{"1", "2", testTime().Add(20 * time.Second).String()}}},
+				{Row: render.Row{ID: "B", Fields: render.Fields{"0", "2", testTime().Add(10 * time.Second).String()}}},
+				{Row: render.Row{ID: "C", Fields: render.Fields{"10", "2", testTime().String()}}},
 			},
-			col: 2,
-			asc: true,
-			age: true,
+			col:      2,
+			asc:      true,
+			duration: true,
 			e: render.RowEvents{
-				{Row: render.Row{ID: "B", Fields: render.Fields{"0", "2", "10.5s"}}},
-				{Row: render.Row{ID: "A", Fields: render.Fields{"1", "2", "1h10m10.5s"}}},
-				{Row: render.Row{ID: "C", Fields: render.Fields{"10", "2", "3h20m5.2s"}}},
-			},
-		},
-		"age_duration": {
-			re: render.RowEvents{
-				{Row: render.Row{ID: "A", Fields: render.Fields{"1", "2", "32d"}}},
-				{Row: render.Row{ID: "B", Fields: render.Fields{"0", "2", "1m10s"}}},
-				{Row: render.Row{ID: "C", Fields: render.Fields{"10", "2", "3h20m5s"}}},
-			},
-			col: 2,
-			asc: true,
-			age: true,
-			e: render.RowEvents{
-				{Row: render.Row{ID: "B", Fields: render.Fields{"0", "2", "1m10s"}}},
-				{Row: render.Row{ID: "C", Fields: render.Fields{"10", "2", "3h20m5s"}}},
-				{Row: render.Row{ID: "A", Fields: render.Fields{"1", "2", "32d"}}},
+				{Row: render.Row{ID: "C", Fields: render.Fields{"10", "2", testTime().String()}}},
+				{Row: render.Row{ID: "B", Fields: render.Fields{"0", "2", testTime().Add(10 * time.Second).String()}}},
+				{Row: render.Row{ID: "A", Fields: render.Fields{"1", "2", testTime().Add(20 * time.Second).String()}}},
 			},
 		},
 		"col0": {
@@ -478,12 +468,33 @@ func TestRowEventsSort(t *testing.T) {
 				{Row: render.Row{ID: "ns2/C", Fields: render.Fields{"C", "2", "3"}}},
 			},
 		},
+		"capacity": {
+			re: render.RowEvents{
+				{Row: render.Row{ID: "ns1/B", Fields: render.Fields{"B", "2", "3", "1Gi"}}},
+				{Row: render.Row{ID: "ns1/A", Fields: render.Fields{"A", "2", "3", "1.1G"}}},
+				{Row: render.Row{ID: "ns1/C", Fields: render.Fields{"C", "2", "3", "0.5Ti"}}},
+				{Row: render.Row{ID: "ns2/B", Fields: render.Fields{"B", "2", "3", "12e6"}}},
+				{Row: render.Row{ID: "ns2/A", Fields: render.Fields{"A", "2", "3", "1234"}}},
+				{Row: render.Row{ID: "ns2/C", Fields: render.Fields{"C", "2", "3", "0.1Ei"}}},
+			},
+			col:      3,
+			asc:      true,
+			capacity: true,
+			e: render.RowEvents{
+				{Row: render.Row{ID: "ns2/A", Fields: render.Fields{"A", "2", "3", "1234"}}},
+				{Row: render.Row{ID: "ns2/B", Fields: render.Fields{"B", "2", "3", "12e6"}}},
+				{Row: render.Row{ID: "ns1/B", Fields: render.Fields{"B", "2", "3", "1Gi"}}},
+				{Row: render.Row{ID: "ns1/A", Fields: render.Fields{"A", "2", "3", "1.1G"}}},
+				{Row: render.Row{ID: "ns1/C", Fields: render.Fields{"C", "2", "3", "0.5Ti"}}},
+				{Row: render.Row{ID: "ns2/C", Fields: render.Fields{"C", "2", "3", "0.1Ei"}}},
+			},
+		},
 	}
 
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
-			u.re.Sort("", u.col, u.age, u.num, u.asc)
+			u.re.Sort("", u.col, u.duration, u.num, u.capacity, u.asc)
 			assert.Equal(t, u.e, u.re)
 		})
 	}

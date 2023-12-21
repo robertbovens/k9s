@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package dao
 
 import (
@@ -9,14 +12,16 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/rs/zerolog/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// CRD identifies a CRD.
-const CRD = "crd"
+const (
+	crdCat  = "crd"
+	k9sCat  = "k9s"
+	helmCat = "helm"
+)
 
 // MetaAccess tracks resources metadata.
 var MetaAccess = NewMeta()
@@ -80,6 +85,7 @@ func AccessorFor(f Factory, gvr client.GVR) (Accessor, error) {
 	m := Accessors{
 		client.NewGVR("contexts"):               &Context{},
 		client.NewGVR("containers"):             &Container{},
+		client.NewGVR("scans"):                  &ImageScan{},
 		client.NewGVR("screendumps"):            &ScreenDump{},
 		client.NewGVR("benchmarks"):             &Benchmark{},
 		client.NewGVR("portforwards"):           &PortForward{},
@@ -89,20 +95,20 @@ func AccessorFor(f Factory, gvr client.GVR) (Accessor, error) {
 		client.NewGVR("apps/v1/deployments"):    &Deployment{},
 		client.NewGVR("apps/v1/daemonsets"):     &DaemonSet{},
 		client.NewGVR("apps/v1/statefulsets"):   &StatefulSet{},
+		client.NewGVR("apps/v1/replicasets"):    &ReplicaSet{},
 		client.NewGVR("batch/v1/cronjobs"):      &CronJob{},
 		client.NewGVR("batch/v1beta1/cronjobs"): &CronJob{},
 		client.NewGVR("batch/v1/jobs"):          &Job{},
-		// BOZO!! Revamp with latest...
-		// client.NewGVR("openfaas"):               &OpenFaas{},
-		client.NewGVR("popeye"):    &Popeye{},
-		client.NewGVR("sanitizer"): &Popeye{},
-		client.NewGVR("helm"):      &Helm{},
-		client.NewGVR("dir"):       &Dir{},
+		client.NewGVR("v1/namespaces"):          &Namespace{},
+		client.NewGVR("popeye"):                 &Popeye{},
+		client.NewGVR("helm"):                   &HelmChart{},
+		client.NewGVR("helm-history"):           &HelmHistory{},
+		client.NewGVR("dir"):                    &Dir{},
 	}
 
 	r, ok := m[gvr]
 	if !ok {
-		r = &Generic{}
+		r = new(Generic)
 		log.Debug().Msgf("No DAO registry entry for %q. Using generics!", gvr)
 	}
 	r.Init(f, gvr)
@@ -133,9 +139,9 @@ func (m *Meta) AllGVRs() client.GVRs {
 }
 
 // IsCRD checks if resource represents a CRD
-func IsCRD(r v1.APIResource) bool {
+func IsCRD(r metav1.APIResource) bool {
 	for _, c := range r.Categories {
-		if c == CRD {
+		if c == crdCat {
 			return true
 		}
 	}
@@ -157,7 +163,7 @@ func (m *Meta) MetaFor(gvr client.GVR) (metav1.APIResource, error) {
 // IsK8sMeta checks for non resource meta.
 func IsK8sMeta(m metav1.APIResource) bool {
 	for _, c := range m.Categories {
-		if c == "k9s" || c == "helm" || c == "faas" {
+		if c == k9sCat || c == helmCat {
 			return false
 		}
 	}
@@ -168,7 +174,7 @@ func IsK8sMeta(m metav1.APIResource) bool {
 // IsK9sMeta checks for non resource meta.
 func IsK9sMeta(m metav1.APIResource) bool {
 	for _, c := range m.Categories {
-		if c == "k9s" {
+		if c == k9sCat {
 			return true
 		}
 	}
@@ -196,10 +202,6 @@ func loadNonResource(m ResourceMetas) {
 	loadK9s(m)
 	loadRBAC(m)
 	loadHelm(m)
-	// BOZO!! Revamp with latest...
-	// if IsOpenFaasEnabled() {
-	// 	loadOpenFaas(m)
-	// }
 }
 
 func loadK9s(m ResourceMetas) {
@@ -208,33 +210,33 @@ func loadK9s(m ResourceMetas) {
 		Kind:         "Pulse",
 		SingularName: "pulses",
 		ShortNames:   []string{"hz", "pu"},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("dir")] = metav1.APIResource{
 		Name:         "dir",
 		Kind:         "Dir",
 		SingularName: "dir",
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("xrays")] = metav1.APIResource{
 		Name:         "xray",
 		Kind:         "XRays",
 		SingularName: "xray",
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("references")] = metav1.APIResource{
 		Name:         "references",
 		Kind:         "References",
 		SingularName: "reference",
 		Verbs:        []string{},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("aliases")] = metav1.APIResource{
 		Name:         "aliases",
 		Kind:         "Aliases",
 		SingularName: "alias",
 		Verbs:        []string{},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("popeye")] = metav1.APIResource{
 		Name:         "popeye",
@@ -242,14 +244,14 @@ func loadK9s(m ResourceMetas) {
 		SingularName: "popeye",
 		Namespaced:   true,
 		Verbs:        []string{},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("sanitizer")] = metav1.APIResource{
 		Name:         "sanitizer",
 		Kind:         "Sanitizer",
 		SingularName: "sanitizer",
 		Verbs:        []string{},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("contexts")] = metav1.APIResource{
 		Name:         "contexts",
@@ -257,7 +259,7 @@ func loadK9s(m ResourceMetas) {
 		SingularName: "context",
 		ShortNames:   []string{"ctx"},
 		Verbs:        []string{},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("screendumps")] = metav1.APIResource{
 		Name:         "screendumps",
@@ -265,7 +267,7 @@ func loadK9s(m ResourceMetas) {
 		SingularName: "screendump",
 		ShortNames:   []string{"sd"},
 		Verbs:        []string{"delete"},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("benchmarks")] = metav1.APIResource{
 		Name:         "benchmarks",
@@ -273,7 +275,7 @@ func loadK9s(m ResourceMetas) {
 		SingularName: "benchmark",
 		ShortNames:   []string{"be"},
 		Verbs:        []string{"delete"},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("portforwards")] = metav1.APIResource{
 		Name:         "portforwards",
@@ -282,65 +284,67 @@ func loadK9s(m ResourceMetas) {
 		SingularName: "portforward",
 		ShortNames:   []string{"pf"},
 		Verbs:        []string{"delete"},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
 	}
 	m[client.NewGVR("containers")] = metav1.APIResource{
 		Name:         "containers",
 		Kind:         "Containers",
 		SingularName: "container",
 		Verbs:        []string{},
-		Categories:   []string{"k9s"},
+		Categories:   []string{k9sCat},
+	}
+	m[client.NewGVR("scans")] = metav1.APIResource{
+		Name:         "scans",
+		Kind:         "Scans",
+		SingularName: "scan",
+		Verbs:        []string{},
+		Categories:   []string{k9sCat},
 	}
 }
 
 func loadHelm(m ResourceMetas) {
 	m[client.NewGVR("helm")] = metav1.APIResource{
-		Name:       "helm",
-		Kind:       "Helm",
+		Name:       "chart",
+		Kind:       "Chart",
 		Namespaced: true,
 		Verbs:      []string{"delete"},
-		Categories: []string{"helm"},
+		Categories: []string{helmCat},
+	}
+	m[client.NewGVR("helm-history")] = metav1.APIResource{
+		Name:       "history",
+		Kind:       "History",
+		Namespaced: true,
+		Verbs:      []string{"delete"},
+		Categories: []string{helmCat},
 	}
 }
-
-// BOZO!! revamp with latest...
-// func loadOpenFaas(m ResourceMetas) {
-// 	m[client.NewGVR("openfaas")] = metav1.APIResource{
-// 		Name:       "openfaas",
-// 		Kind:       "OpenFaaS",
-// 		ShortNames: []string{"ofaas", "ofa"},
-// 		Namespaced: true,
-// 		Verbs:      []string{"delete"},
-// 		Categories: []string{"faas"},
-// 	}
-// }
 
 func loadRBAC(m ResourceMetas) {
 	m[client.NewGVR("rbac")] = metav1.APIResource{
 		Name:       "rbacs",
 		Kind:       "Rules",
-		Categories: []string{"k9s"},
+		Categories: []string{k9sCat},
 	}
 	m[client.NewGVR("policy")] = metav1.APIResource{
 		Name:       "policies",
 		Kind:       "Rules",
 		Namespaced: true,
-		Categories: []string{"k9s"},
+		Categories: []string{k9sCat},
 	}
 	m[client.NewGVR("users")] = metav1.APIResource{
 		Name:       "users",
 		Kind:       "User",
-		Categories: []string{"k9s"},
+		Categories: []string{k9sCat},
 	}
 	m[client.NewGVR("groups")] = metav1.APIResource{
 		Name:       "groups",
 		Kind:       "Group",
-		Categories: []string{"k9s"},
+		Categories: []string{k9sCat},
 	}
 }
 
 func loadPreferred(f Factory, m ResourceMetas) error {
-	if !f.Client().ConnectionOK() {
+	if f.Client() == nil || !f.Client().ConnectionOK() {
 		log.Error().Msgf("Load cluster resources - No API server connection")
 		return nil
 	}
@@ -364,7 +368,7 @@ func loadPreferred(f Factory, m ResourceMetas) error {
 				res.SingularName = strings.ToLower(res.Kind)
 			}
 			if !isStandardGroup(res.Group) {
-				res.Categories = append(res.Categories, CRD)
+				res.Categories = append(res.Categories, crdCat)
 			}
 			m[gvr] = res
 		}
@@ -393,7 +397,7 @@ func isDeprecated(gvr client.GVR) bool {
 }
 
 func loadCRDs(f Factory, m ResourceMetas) {
-	if !f.Client().ConnectionOK() {
+	if f.Client() == nil || !f.Client().ConnectionOK() {
 		return
 	}
 	const crdGVR = "apiextensions.k8s.io/v1/customresourcedefinitions"
@@ -409,7 +413,7 @@ func loadCRDs(f Factory, m ResourceMetas) {
 			log.Error().Err(errs[0]).Msgf("Fail to extract CRD meta (%d) errors", len(errs))
 			continue
 		}
-		meta.Categories = append(meta.Categories, CRD)
+		meta.Categories = append(meta.Categories, crdCat)
 		gvr := client.NewGVRFromMeta(meta)
 		m[gvr] = meta
 	}
@@ -423,7 +427,7 @@ func extractMeta(o runtime.Object) (metav1.APIResource, []error) {
 
 	crd, ok := o.(*unstructured.Unstructured)
 	if !ok {
-		return m, append(errs, fmt.Errorf("Expected Unstructured, but got %T", o))
+		return m, append(errs, fmt.Errorf("expected unstructured, but got %T", o))
 	}
 
 	var spec map[string]interface{}

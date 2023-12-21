@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -5,8 +8,8 @@ import (
 
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/ui"
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 )
 
 // Picker represents a container picker.
@@ -30,14 +33,17 @@ func (p *Picker) Init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	pickerView := app.Styles.Views().Picker
 	p.actions[tcell.KeyEscape] = ui.NewKeyAction("Back", app.PrevCmd, true)
 
 	p.SetBorder(true)
-	p.SetMainTextColor(tcell.ColorWhite)
+	p.SetMainTextColor(pickerView.MainColor.Color())
 	p.ShowSecondaryText(false)
-	p.SetShortcutColor(tcell.ColorAqua)
-	p.SetSelectedBackgroundColor(tcell.ColorAqua)
+	p.SetShortcutColor(pickerView.ShortcutColor.Color())
+	p.SetSelectedBackgroundColor(pickerView.FocusColor.Color())
 	p.SetTitle(" [aqua::b]Containers Picker ")
+
 	p.SetInputCapture(func(evt *tcell.EventKey) *tcell.EventKey {
 		if a, ok := p.actions[evt.Key()]; ok {
 			a.Action(evt)

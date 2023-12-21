@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -7,15 +10,39 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/config"
+	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
+	"github.com/derailed/tview"
 	"github.com/rs/zerolog/log"
+	"github.com/sahilm/fuzzy"
 )
+
+func clipboardWrite(text string) error {
+	return clipboard.WriteAll(text)
+}
+
+func sanitizeEsc(s string) string {
+	return strings.ReplaceAll(s, "[]", "]")
+}
+
+func cpCmd(flash *model.Flash, v *tview.TextView) func(*tcell.EventKey) *tcell.EventKey {
+	return func(evt *tcell.EventKey) *tcell.EventKey {
+		if err := clipboardWrite(sanitizeEsc(v.GetText(true))); err != nil {
+			flash.Err(err)
+			return evt
+		}
+		flash.Info("Content copied to clipboard...")
+
+		return nil
+	}
+}
 
 func parsePFAnn(s string) (string, string, bool) {
 	tokens := strings.Split(s, ":")
@@ -63,7 +90,10 @@ func defaultEnv(c *client.Config, path string, header render.Header, row render.
 	env := k8sEnv(c)
 	env["NAMESPACE"], env["NAME"] = client.Namespaced(path)
 	for _, col := range header.Columns(true) {
-		env["COL-"+col] = row.Fields[header.IndexOf(col, true)]
+		i := header.IndexOf(col, true)
+		if i >= 0 && i < len(row.Fields) {
+			env["COL-"+col] = row.Fields[i]
+		}
 	}
 
 	return env
@@ -71,7 +101,7 @@ func defaultEnv(c *client.Config, path string, header render.Header, row render.
 
 func describeResource(app *App, m ui.Tabular, gvr, path string) {
 	v := NewLiveView(app, "Describe", model.NewDescribe(client.NewGVR(gvr), path))
-	if err := app.inject(v); err != nil {
+	if err := app.inject(v, false); err != nil {
 		app.Flash().Err(err)
 	}
 }
@@ -92,13 +122,12 @@ func showPods(app *App, path, labelSel, fieldSel string) {
 
 	v := NewPod(client.NewGVR("v1/pods"))
 	v.SetContextFn(podCtx(app, path, labelSel, fieldSel))
-	v.GetTable().SetColorerFn(render.Pod{}.ColorerFunc())
 
 	ns, _ := client.Namespaced(path)
 	if err := app.Config.SetActiveNamespace(ns); err != nil {
 		log.Error().Err(err).Msg("Config NS set failed!")
 	}
-	if err := app.inject(v); err != nil {
+	if err := app.inject(v, false); err != nil {
 		app.Flash().Err(err)
 	}
 }
@@ -123,7 +152,7 @@ func podCtx(app *App, path, labelSel, fieldSel string) ContextFunc {
 func extractApp(ctx context.Context) (*App, error) {
 	app, ok := ctx.Value(internal.KeyApp).(*App)
 	if !ok {
-		return nil, errors.New("No application found in context")
+		return nil, errors.New("no application found in context")
 	}
 
 	return app, nil
@@ -137,7 +166,7 @@ func asKey(key string) (tcell.Key, error) {
 		}
 	}
 
-	return 0, fmt.Errorf("No matching key found %s", key)
+	return 0, fmt.Errorf("no matching key found %s", key)
 }
 
 // FwFQN returns a fully qualified ns/name:container id.
@@ -179,9 +208,9 @@ func fqn(ns, n string) string {
 	return ns + "/" + n
 }
 
-func decorateCpuMemHeaderRows(app *App, data render.TableData) render.TableData {
+func decorateCpuMemHeaderRows(app *App, data *render.TableData) {
 	for colIndex, header := range data.Header {
-		check := ""
+		var check string
 		if header.Name == "%CPU/L" {
 			check = "cpu"
 		}
@@ -212,6 +241,23 @@ func decorateCpuMemHeaderRows(app *App, data render.TableData) render.TableData 
 			}
 		}
 	}
+}
 
-	return data
+func matchTag(i int, s string) string {
+	return `<<<"search_` + strconv.Itoa(i) + `">>>` + s + `<<<"">>>`
+}
+
+func linesWithRegions(lines []string, matches fuzzy.Matches) []string {
+	ll := make([]string, len(lines))
+	copy(ll, lines)
+	offsetForLine := make(map[int]int)
+	for i, m := range matches {
+		for _, loc := range dao.ContinuousRanges(m.MatchedIndexes) {
+			start, end := loc[0]+offsetForLine[m.Index], loc[1]+offsetForLine[m.Index]
+			regionStr := matchTag(i, ll[m.Index][start:end])
+			ll[m.Index] = ll[m.Index][:start] + regionStr + ll[m.Index][end:]
+			offsetForLine[m.Index] += len(regionStr) - (end - start)
+		}
+	}
+	return ll
 }

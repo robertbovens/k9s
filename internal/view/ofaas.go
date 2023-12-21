@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 // BOZO!! revamp with latest...
@@ -19,7 +22,6 @@ package view
 // 	o := OpenFaas{ResourceViewer: NewBrowser(gvr)}
 // 	o.AddBindKeysFn(o.bindKeys)
 // 	o.GetTable().SetEnterFn(o.showPods)
-// 	o.GetTable().SetColorerFn(render.OpenFaas{}.ColorerFunc())
 
 // 	return &o
 // }

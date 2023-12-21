@@ -1,10 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
-	"fmt"
 	"sort"
-
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -196,7 +196,7 @@ func (r RowEvents) FindIndex(id string) (int, bool) {
 }
 
 // Sort rows based on column index and order.
-func (r RowEvents) Sort(ns string, sortCol int, isDuration, numCol, asc bool) {
+func (r RowEvents) Sort(ns string, sortCol int, isDuration, numCol, isCapacity, asc bool) {
 	if sortCol == -1 {
 		return
 	}
@@ -208,26 +208,9 @@ func (r RowEvents) Sort(ns string, sortCol int, isDuration, numCol, asc bool) {
 		Asc:        asc,
 		IsNumber:   numCol,
 		IsDuration: isDuration,
+		IsCapacity: isCapacity,
 	}
 	sort.Sort(t)
-
-	iids, fields := map[string][]string{}, make(StringSet, 0, len(r))
-	for _, re := range r {
-		field := re.Row.Fields[sortCol]
-		if isDuration {
-			field = toAgeDuration(field)
-		}
-		fields = fields.Add(field)
-		iids[field] = append(iids[field], re.Row.ID)
-	}
-
-	ids := make([]string, 0, len(r))
-	for _, field := range fields {
-		sort.StringSlice(iids[field]).Sort()
-		ids = append(ids, iids[field]...)
-	}
-	s := IdSorter{Ids: ids, Events: r}
-	sort.Sort(s)
 }
 
 // ----------------------------------------------------------------------------
@@ -239,6 +222,7 @@ type RowEventSorter struct {
 	NS         string
 	IsNumber   bool
 	IsDuration bool
+	IsCapacity bool
 	Asc        bool
 }
 
@@ -252,64 +236,11 @@ func (r RowEventSorter) Swap(i, j int) {
 
 func (r RowEventSorter) Less(i, j int) bool {
 	f1, f2 := r.Events[i].Row.Fields, r.Events[j].Row.Fields
-	return Less(r.Asc, r.IsNumber, r.IsDuration, f1[r.Index], f2[r.Index])
-}
-
-// ----------------------------------------------------------------------------
-
-// IdSorter sorts row events by a given id.
-type IdSorter struct {
-	Ids    []string
-	Events RowEvents
-}
-
-func (s IdSorter) Len() int {
-	return len(s.Events)
-}
-
-func (s IdSorter) Swap(i, j int) {
-	s.Events[i], s.Events[j] = s.Events[j], s.Events[i]
-}
-
-func (s IdSorter) Less(i, j int) bool {
-	id1, id2 := s.Events[i].Row.ID, s.Events[j].Row.ID
-	i1, i2 := findIndex(s.Ids, id1), findIndex(s.Ids, id2)
-	return i1 < i2
-}
-
-func findIndex(ss []string, s string) int {
-	for i := range ss {
-		if ss[i] == s {
-			return i
-		}
+	id1, id2 := r.Events[i].Row.ID, r.Events[j].Row.ID
+	less := Less(r.IsNumber, r.IsDuration, r.IsCapacity, id1, id2, f1[r.Index], f2[r.Index])
+	if r.Asc {
+		return less
 	}
-	log.Error().Err(fmt.Errorf("Doh! index not found for %s", s))
-	return -1
-}
 
-// ----------------------------------------------------------------------------
-
-// StringSet represents a collection of unique strings.
-type StringSet []string
-
-// Add adds a new item in the set.
-func (ss StringSet) Add(item string) StringSet {
-	if ss.In(item) {
-		return ss
-	}
-	return append(ss, item)
-}
-
-// In checks if a string is in the set.
-func (ss StringSet) In(item string) bool {
-	return ss.indexOf(item) >= 0
-}
-
-func (ss StringSet) indexOf(item string) int {
-	for i, s := range ss {
-		if s == item {
-			return i
-		}
-	}
-	return -1
+	return !less
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -5,7 +8,6 @@ import (
 
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,17 +24,18 @@ type Deploy struct {
 func NewDeploy(gvr client.GVR) ResourceViewer {
 	var d Deploy
 	d.ResourceViewer = NewPortForwardExtender(
-		NewRestartExtender(
-			NewScaleExtender(
-				NewImageExtender(
-					NewLogsExtender(NewBrowser(gvr), d.logOptions),
+		NewVulnerabilityExtender(
+			NewRestartExtender(
+				NewScaleExtender(
+					NewImageExtender(
+						NewLogsExtender(NewBrowser(gvr), d.logOptions),
+					),
 				),
 			),
 		),
 	)
 	d.AddBindKeysFn(d.bindKeys)
 	d.GetTable().SetEnterFn(d.showPods)
-	d.GetTable().SetColorerFn(render.Deployment{}.ColorerFunc())
 
 	return &d
 }
@@ -61,7 +64,7 @@ func (d *Deploy) logOptions(prev bool) (*dao.LogOptions, error) {
 		co, dco string
 		allCos  bool
 	)
-	if c, ok := dao.GetDefaultLogContainer(sts.Spec.Template.ObjectMeta, sts.Spec.Template.Spec); ok {
+	if c, ok := dao.GetDefaultContainer(sts.Spec.Template.ObjectMeta, sts.Spec.Template.Spec); ok {
 		co, dco = c, c
 	} else if len(cc) == 1 {
 		co = cc[0].Name
@@ -88,20 +91,24 @@ func (d *Deploy) logOptions(prev bool) (*dao.LogOptions, error) {
 	return &opts, nil
 }
 
-func (d *Deploy) showPods(app *App, model ui.Tabular, gvr, path string) {
+func (d *Deploy) showPods(app *App, model ui.Tabular, gvr, fqn string) {
 	var ddp dao.Deployment
-	dp, err := ddp.Load(app.factory, path)
+	ddp.Init(d.App().factory, d.GVR())
+
+	dp, err := ddp.GetInstance(fqn)
 	if err != nil {
 		app.Flash().Err(err)
 		return
 	}
 
-	showPodsFromSelector(app, path, dp.Spec.Selector)
+	showPodsFromSelector(app, fqn, dp.Spec.Selector)
 }
 
-func (d *Deploy) dp(path string) (*appsv1.Deployment, error) {
+func (d *Deploy) dp(fqn string) (*appsv1.Deployment, error) {
 	var dp dao.Deployment
-	return dp.Load(d.App().factory, path)
+	dp.Init(d.App().factory, d.GVR())
+
+	return dp.GetInstance(fqn)
 }
 
 // ----------------------------------------------------------------------------

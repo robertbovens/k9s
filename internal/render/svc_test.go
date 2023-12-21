@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render_test
 
 import (
@@ -10,8 +13,8 @@ import (
 func TestServiceRender(t *testing.T) {
 	c := render.Service{}
 	r := render.NewRow(4)
-	c.Render(load(t, "svc"), "", &r)
 
+	assert.NoError(t, c.Render(load(t, "svc"), "", &r))
 	assert.Equal(t, "default/dictionary1", r.ID)
 	assert.Equal(t, render.Fields{"default", "dictionary1", "ClusterIP", "10.47.248.116", "", "app=dictionary1", "http:4001►0"}, r.Fields[:7])
 }

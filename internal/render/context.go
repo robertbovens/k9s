@@ -1,10 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	"github.com/rs/zerolog/log"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,9 +23,6 @@ type Context struct {
 func (Context) ColorerFunc() ColorerFunc {
 	return func(ns string, h Header, r RowEvent) tcell.Color {
 		c := DefaultColorer(ns, h, r)
-		if r.Kind == EventAdd || r.Kind == EventUpdate {
-			return c
-		}
 		if strings.Contains(strings.TrimSpace(r.Row.Fields[0]), "*") {
 			return HighlightColor
 		}

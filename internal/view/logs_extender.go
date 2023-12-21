@@ -1,10 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 )
 
 // LogsExtender adds log actions to a given viewer.
@@ -55,7 +58,7 @@ func isResourcePath(p string) bool {
 
 func (l *LogsExtender) showLogs(path string, prev bool) {
 	ns, _ := client.Namespaced(path)
-	_, err := l.App().factory.CanForResource(ns, "v1/pods", client.MonitorAccess)
+	_, err := l.App().factory.CanForResource(ns, "v1/pods", client.ListAccess)
 	if err != nil {
 		l.App().Flash().Err(err)
 		return
@@ -67,7 +70,7 @@ func (l *LogsExtender) showLogs(path string, prev bool) {
 			return
 		}
 	}
-	if err := l.App().inject(NewLog(l.GVR(), opts)); err != nil {
+	if err := l.App().inject(NewLog(l.GVR(), opts), false); err != nil {
 		l.App().Flash().Err(err)
 	}
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package dao
 
 import (
@@ -13,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/printers"
 )
+
+const defaultServiceAccount = "default"
 
 var (
 	inverseRx = regexp.MustCompile(`\A\!`)
@@ -80,4 +85,28 @@ func ToYAML(o runtime.Object, showManaged bool) (string, error) {
 	}
 
 	return buff.String(), nil
+}
+
+// serviceAccountMatches validates that the ServiceAccount referenced in the PodSpec matches the incoming
+// ServiceAccount. If the PodSpec ServiceAccount is blank kubernetes will use the "default" ServiceAccount
+// when deploying the pod, so if the incoming SA is "default" and podSA is an empty string that is also a match.
+func serviceAccountMatches(podSA, saName string) bool {
+	if podSA == "" {
+		podSA = defaultServiceAccount
+	}
+	return podSA == saName
+}
+
+// ContinuousRanges takes a sorted slice of integers and returns a slice of
+// sub-slices representing continuous ranges of integers.
+func ContinuousRanges(indexes []int) [][]int {
+	var ranges [][]int
+	for i, p := 1, 0; i <= len(indexes); i++ {
+		if i == len(indexes) || indexes[i]-indexes[p] != i-p {
+			ranges = append(ranges, []int{indexes[p], indexes[i-1] + 1})
+			p = i
+		}
+	}
+
+	return ranges
 }

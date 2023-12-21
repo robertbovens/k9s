@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package config
 
 import (
@@ -5,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/derailed/k9s/internal/client"
@@ -19,6 +23,10 @@ const K9sConfig = "K9SCONFIG"
 var (
 	// K9sConfigFile represents K9s config file location.
 	K9sConfigFile = filepath.Join(K9sHome(), "config.yml")
+
+	// K9sSkinDir represent K9s skin dir
+	K9sSkinDir = filepath.Join(K9sHome(), "skins")
+
 	// K9sDefaultScreenDumpDir represents a default directory where K9s screen dumps will be persisted.
 	K9sDefaultScreenDumpDir = filepath.Join(os.TempDir(), fmt.Sprintf("k9s-screens-%s", MustK9sUser()))
 )
@@ -87,20 +95,23 @@ func (c *Config) Refine(flags *genericclioptions.ConfigFlags, k9sFlags *Flags, c
 	}
 	context, ok := cc[c.K9s.CurrentContext]
 	if !ok {
-		return fmt.Errorf("The specified context %q does not exists in kubeconfig", c.K9s.CurrentContext)
+		return fmt.Errorf("the specified context %q does not exists in kubeconfig", c.K9s.CurrentContext)
 	}
 	c.K9s.CurrentCluster = context.Cluster
 	c.K9s.ActivateCluster(context.Namespace)
 
 	var ns = client.DefaultNamespace
-	if k9sFlags != nil && IsBoolSet(k9sFlags.AllNamespaces) {
+	switch {
+	case k9sFlags != nil && IsBoolSet(k9sFlags.AllNamespaces):
 		ns = client.NamespaceAll
-	} else if isSet(flags.Namespace) {
+	case isSet(flags.Namespace):
 		ns = *flags.Namespace
-	} else if isSet(flags.Context) {
-		ns = context.Namespace
-	} else {
-		ns = c.K9s.ActiveCluster().Namespace.Active
+	default:
+		if nss := context.Namespace; nss != "" {
+			ns = nss
+		} else if nss == "" {
+			ns = c.K9s.ActiveCluster().Namespace.Active
+		}
 	}
 
 	if err := c.SetActiveNamespace(ns); err != nil {
@@ -111,9 +122,8 @@ func (c *Config) Refine(flags *genericclioptions.ConfigFlags, k9sFlags *Flags, c
 	if isSet(flags.ClusterName) {
 		c.K9s.CurrentCluster = *flags.ClusterName
 	}
-	EnsurePath(c.K9s.GetScreenDumpDir(), DefaultDirMod)
 
-	return nil
+	return EnsureDirPath(c.K9s.GetScreenDumpDir(), DefaultDirMod)
 }
 
 // Reset the context to the new current context/cluster.
@@ -189,6 +199,10 @@ func (c *Config) ActiveView() string {
 	cmd := cl.View.Active
 	if c.K9s.manualCommand != nil && *c.K9s.manualCommand != "" {
 		cmd = *c.K9s.manualCommand
+		// We reset the manualCommand property because
+		// the command-line switch should only be considered once,
+		// on startup.
+		*c.K9s.manualCommand = ""
 	}
 
 	return cmd
@@ -241,7 +255,9 @@ func (c *Config) Save() error {
 
 // SaveFile K9s configuration to disk.
 func (c *Config) SaveFile(path string) error {
-	EnsurePath(path, DefaultDirMod)
+	if err := EnsureDirPath(path, DefaultDirMod); err != nil {
+		return err
+	}
 	cfg, err := yaml.Marshal(c)
 	if err != nil {
 		log.Error().Msgf("[Config] Unable to save K9s config file: %v", err)
@@ -259,8 +275,26 @@ func (c *Config) Validate() {
 func (c *Config) Dump(msg string) {
 	log.Debug().Msgf("Current Cluster: %s\n", c.K9s.CurrentCluster)
 	for k, cl := range c.K9s.Clusters {
-		log.Debug().Msgf("K9s cluster: %s -- %s\n", k, cl.Namespace)
+		log.Debug().Msgf("K9s cluster: %s -- %+v\n", k, cl.Namespace)
 	}
+}
+
+// YamlExtension tries to find the correct extension for a YAML file
+func YamlExtension(path string) string {
+	if !isYamlFile(path) {
+		log.Error().Msgf("Config: File %s is not a yaml file", path)
+		return path
+	}
+
+	// Strip any extension, if there is no extension the path will remain unchanged
+	path = strings.TrimSuffix(path, filepath.Ext(path))
+	result := path + ".yml"
+
+	if _, err := os.Stat(result); os.IsNotExist(err) {
+		return path + ".yaml"
+	}
+
+	return result
 }
 
 // ----------------------------------------------------------------------------
@@ -268,4 +302,9 @@ func (c *Config) Dump(msg string) {
 
 func isSet(s *string) bool {
 	return s != nil && len(*s) > 0
+}
+
+func isYamlFile(file string) bool {
+	ext := filepath.Ext(file)
+	return ext == ".yml" || ext == ".yaml"
 }

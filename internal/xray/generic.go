@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package xray
 
 import (
@@ -14,7 +17,7 @@ type Generic struct {
 }
 
 // SetTable sets the tabular resource.
-func (g *Generic) SetTable(t *metav1beta1.Table) {
+func (g *Generic) SetTable(_ string, t *metav1beta1.Table) {
 	g.table = t
 }
 

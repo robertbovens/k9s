@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -17,6 +20,7 @@ type HeaderColumn struct {
 	Wide      bool
 	MX        bool
 	Time      bool
+	Capacity  bool
 }
 
 // Clone copies a header.
@@ -150,6 +154,7 @@ func (h Header) IsMetricsCol(col int) bool {
 	if col < 0 || col >= len(h) {
 		return false
 	}
+
 	return h[col].MX
 }
 
@@ -160,6 +165,15 @@ func (h Header) IsTimeCol(col int) bool {
 	}
 
 	return h[col].Time
+}
+
+// IsCapacityCol checks if given column index represents a capacity.
+func (h Header) IsCapacityCol(col int) bool {
+	if col < 0 || col >= len(h) {
+		return false
+	}
+
+	return h[col].Capacity
 }
 
 // ValidColIndex returns the valid col index or -1 if none.

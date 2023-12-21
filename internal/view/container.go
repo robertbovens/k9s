@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -11,7 +14,7 @@ import (
 	"github.com/derailed/k9s/internal/port"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	"github.com/rs/zerolog/log"
 	v1 "k8s.io/api/core/v1"
 )
@@ -29,7 +32,6 @@ func NewContainer(gvr client.GVR) ResourceViewer {
 	c.ResourceViewer = NewLogsExtender(NewBrowser(gvr), c.logOptions)
 	c.SetEnvFn(c.k9sEnv)
 	c.GetTable().SetEnterFn(c.viewLogs)
-	c.GetTable().SetColorerFn(render.Container{}.ColorerFunc())
 	c.GetTable().SetDecorateFn(c.decorateRows)
 	c.AddBindKeysFn(c.bindKeys)
 	c.GetTable().SetDecorateFn(c.portForwardIndicator)
@@ -37,21 +39,18 @@ func NewContainer(gvr client.GVR) ResourceViewer {
 	return &c
 }
 
-func (c *Container) portForwardIndicator(data render.TableData) render.TableData {
+func (c *Container) portForwardIndicator(data *render.TableData) {
 	ff := c.App().factory.Forwarders()
-
 	col := data.IndexOfHeader("PF")
 	for _, re := range data.RowEvents {
 		if ff.IsContainerForwarded(c.GetTable().Path, re.Row.ID) {
 			re.Row.Fields[col] = "[orange::b]Ⓕ"
 		}
 	}
-
-	return data
 }
 
-func (c *Container) decorateRows(data render.TableData) render.TableData {
-	return decorateCpuMemHeaderRows(c.App(), data)
+func (c *Container) decorateRows(data *render.TableData) {
+	decorateCpuMemHeaderRows(c.App(), data)
 }
 
 // Name returns the component name.
@@ -129,7 +128,7 @@ func (c *Container) showPFCmd(evt *tcell.EventKey) *tcell.EventKey {
 	}
 	pf := NewPortForward(client.NewGVR("portforwards"))
 	pf.SetContextFn(c.portForwardContext)
-	if err := c.App().inject(pf); err != nil {
+	if err := c.App().inject(pf, false); err != nil {
 		c.App().Flash().Err(err)
 	}
 
@@ -174,7 +173,7 @@ func (c *Container) portFwdCmd(evt *tcell.EventKey) *tcell.EventKey {
 	}
 
 	if _, ok := c.App().factory.ForwarderFor(fwFQN(c.GetTable().Path, path)); ok {
-		c.App().Flash().Err(fmt.Errorf("A port-forward already exist on container %s", c.GetTable().Path))
+		c.App().Flash().Errf("A port-forward already exists on container %s", c.GetTable().Path)
 		return nil
 	}
 

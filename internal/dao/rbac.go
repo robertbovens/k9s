@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package dao
 
 import (
@@ -58,7 +61,7 @@ func (r *Rbac) List(ctx context.Context, ns string) ([]runtime.Object, error) {
 }
 
 func (r *Rbac) loadClusterRoleBinding(path string) ([]runtime.Object, error) {
-	o, err := r.Factory.Get(crbGVR, path, true, labels.Everything())
+	o, err := r.GetFactory().Get(crbGVR, path, true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +72,7 @@ func (r *Rbac) loadClusterRoleBinding(path string) ([]runtime.Object, error) {
 		return nil, err
 	}
 
-	crbo, err := r.Factory.Get(crGVR, client.FQN("-", crb.RoleRef.Name), true, labels.Everything())
+	crbo, err := r.GetFactory().Get(crGVR, client.FQN("-", crb.RoleRef.Name), true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +86,7 @@ func (r *Rbac) loadClusterRoleBinding(path string) ([]runtime.Object, error) {
 }
 
 func (r *Rbac) loadRoleBinding(path string) ([]runtime.Object, error) {
-	o, err := r.Factory.Get(rbGVR, path, true, labels.Everything())
+	o, err := r.GetFactory().Get(rbGVR, path, true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +97,7 @@ func (r *Rbac) loadRoleBinding(path string) ([]runtime.Object, error) {
 	}
 
 	if rb.RoleRef.Kind == "ClusterRole" {
-		o, e := r.Factory.Get(crGVR, client.FQN("-", rb.RoleRef.Name), true, labels.Everything())
+		o, e := r.GetFactory().Get(crGVR, client.FQN("-", rb.RoleRef.Name), true, labels.Everything())
 		if e != nil {
 			return nil, e
 		}
@@ -106,7 +109,7 @@ func (r *Rbac) loadRoleBinding(path string) ([]runtime.Object, error) {
 		return asRuntimeObjects(parseRules(client.ClusterScope, "-", cr.Rules)), nil
 	}
 
-	ro, err := r.Factory.Get(rGVR, client.FQN(rb.Namespace, rb.RoleRef.Name), true, labels.Everything())
+	ro, err := r.GetFactory().Get(rGVR, client.FQN(rb.Namespace, rb.RoleRef.Name), true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +124,7 @@ func (r *Rbac) loadRoleBinding(path string) ([]runtime.Object, error) {
 
 func (r *Rbac) loadClusterRole(path string) ([]runtime.Object, error) {
 	log.Debug().Msgf("LOAD-CR %q", path)
-	o, err := r.Factory.Get(crGVR, path, true, labels.Everything())
+	o, err := r.GetFactory().Get(crGVR, path, true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +139,7 @@ func (r *Rbac) loadClusterRole(path string) ([]runtime.Object, error) {
 }
 
 func (r *Rbac) loadRole(path string) ([]runtime.Object, error) {
-	o, err := r.Factory.Get(rGVR, path, true, labels.Everything())
+	o, err := r.GetFactory().Get(rGVR, path, true, labels.Everything())
 	if err != nil {
 		return nil, err
 	}

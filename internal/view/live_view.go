@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -6,18 +9,20 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/atotto/clipboard"
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/ui"
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
 	"github.com/sahilm/fuzzy"
 )
 
-const liveViewTitleFmt = "[fg:bg:b] %s([hilite:bg:b]%s[fg:bg:-])[fg:bg:-] "
+const (
+	liveViewTitleFmt = "[fg:bg:b] %s([hilite:bg:b]%s[fg:bg:-])[fg:bg:-] "
+	yamlAction       = "YAML"
+)
 
 // LiveView represents a live text viewer.
 type LiveView struct {
@@ -48,6 +53,7 @@ func NewLiveView(app *App, title string, m model.ResourceViewer) *LiveView {
 		maxRegions:    0,
 		cmdBuff:       model.NewFishBuff('/', model.FilterBuffer),
 		model:         m,
+		autoRefresh:   app.Config.K9s.LiveViewAutoRefresh,
 	}
 	v.AddItem(v.text, 0, 1, true)
 
@@ -75,7 +81,9 @@ func (v *LiveView) Init(_ context.Context) error {
 
 	v.bindKeys()
 	v.SetInputCapture(v.keyboard)
-	v.model.AddListener(v)
+	if v.model != nil {
+		v.model.AddListener(v)
+	}
 
 	return nil
 }
@@ -96,19 +104,14 @@ func (v *LiveView) ResourceFailed(err error) {
 func (v *LiveView) ResourceChanged(lines []string, matches fuzzy.Matches) {
 	v.app.QueueUpdateDraw(func() {
 		v.text.SetTextAlign(tview.AlignLeft)
-		v.maxRegions = len(matches)
-		ll := make([]string, len(lines))
-		copy(ll, lines)
-		for i, m := range matches {
-			loc, line := m.MatchedIndexes, ll[m.Index]
-			ll[m.Index] = line[:loc[0]] + `<<<"search_` + strconv.Itoa(i) + `">>>` + line[loc[0]:loc[1]] + `<<<"">>>` + line[loc[1]:]
-		}
+		v.currentRegion, v.maxRegions = 0, len(matches)
 
 		if v.text.GetText(true) == "" {
 			v.text.ScrollToBeginning()
 		}
 
-		v.text.SetText(colorizeYAML(v.app.Styles.Views().Yaml, strings.Join(ll, "\n")))
+		lines = linesWithRegions(lines, matches)
+		v.text.SetText(colorizeYAML(v.app.Styles.Views().Yaml, strings.Join(lines, "\n")))
 		v.text.Highlight()
 		if v.currentRegion < v.maxRegions {
 			v.text.Highlight("search_" + strconv.Itoa(v.currentRegion))
@@ -136,7 +139,7 @@ func (v *LiveView) bindKeys() {
 		tcell.KeyEnter:  ui.NewSharedKeyAction("Filter", v.filterCmd, false),
 		tcell.KeyEscape: ui.NewKeyAction("Back", v.resetCmd, false),
 		tcell.KeyCtrlS:  ui.NewKeyAction("Save", v.saveCmd, false),
-		ui.KeyC:         ui.NewKeyAction("Copy", v.cpCmd, true),
+		ui.KeyC:         ui.NewKeyAction("Copy", cpCmd(v.app.Flash(), v.text), true),
 		ui.KeyF:         ui.NewKeyAction("Toggle FullScreen", v.toggleFullScreenCmd, true),
 		ui.KeyR:         ui.NewKeyAction("Toggle Auto-Refresh", v.toggleRefreshCmd, true),
 		ui.KeyN:         ui.NewKeyAction("Next Match", v.nextCmd, true),
@@ -145,11 +148,30 @@ func (v *LiveView) bindKeys() {
 		tcell.KeyDelete: ui.NewSharedKeyAction("Erase", v.eraseCmd, false),
 	})
 
-	if v.title == "YAML" {
+	if !v.app.Config.K9s.IsReadOnly() {
+		v.actions.Add(ui.KeyActions{
+			ui.KeyE: ui.NewKeyAction("Edit", v.editCmd, true),
+		})
+	}
+	if v.title == yamlAction {
 		v.actions.Add(ui.KeyActions{
 			ui.KeyM: ui.NewKeyAction("Toggle ManagedFields", v.toggleManagedCmd, true),
 		})
 	}
+}
+
+func (v *LiveView) editCmd(evt *tcell.EventKey) *tcell.EventKey {
+	path := v.model.GetPath()
+	if path == "" {
+		return evt
+	}
+	v.Stop()
+	defer v.Start()
+	if err := editRes(v.app, v.model.GVR(), path); err != nil {
+		v.app.Flash().Err(err)
+	}
+
+	return nil
 }
 
 // ToggleRefreshCmd is used for pausing the refreshing of data on config map and secrets.
@@ -179,7 +201,6 @@ func (v *LiveView) StylesChanged(s *config.Styles) {
 	v.SetBackgroundColor(v.app.Styles.BgColor())
 	v.text.SetTextColor(v.app.Styles.FgColor())
 	v.SetBorderFocusColor(v.app.Styles.Frame().Border.FocusColor.Color())
-	v.ResourceChanged(v.model.Peek(), nil)
 }
 
 // Actions returns menu actions.
@@ -332,19 +353,11 @@ func (v *LiveView) resetCmd(evt *tcell.EventKey) *tcell.EventKey {
 }
 
 func (v *LiveView) saveCmd(evt *tcell.EventKey) *tcell.EventKey {
-	if path, err := saveYAML(v.app.Config.K9s.GetScreenDumpDir(), v.app.Config.K9s.CurrentCluster, v.title, v.text.GetText(true)); err != nil {
+	name := fmt.Sprintf("%s--%s", strings.Replace(v.model.GetPath(), "/", "-", 1), strings.ToLower(v.title))
+	if _, err := saveYAML(v.app.Config.K9s.GetScreenDumpDir(), v.app.Config.K9s.CurrentContextDir(), name, sanitizeEsc(v.text.GetText(true))); err != nil {
 		v.app.Flash().Err(err)
 	} else {
-		v.app.Flash().Infof("Log %s saved successfully!", path)
-	}
-
-	return nil
-}
-
-func (v *LiveView) cpCmd(evt *tcell.EventKey) *tcell.EventKey {
-	v.app.Flash().Info("Content copied to clipboard...")
-	if err := clipboard.WriteAll(v.text.GetText(true)); err != nil {
-		v.app.Flash().Err(err)
+		v.app.Flash().Infof("File %q saved successfully!", name)
 	}
 
 	return nil
@@ -354,7 +367,10 @@ func (v *LiveView) updateTitle() {
 	if v.title == "" {
 		return
 	}
-	fmat := fmt.Sprintf(liveViewTitleFmt, v.title, v.model.GetPath())
+	var fmat string
+	if v.model != nil {
+		fmat = fmt.Sprintf(liveViewTitleFmt, v.title, v.model.GetPath())
+	}
 
 	buff := v.cmdBuff.GetText()
 	if buff == "" {

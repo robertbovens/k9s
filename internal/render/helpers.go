@@ -1,40 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/derailed/k9s/internal/client"
+	"github.com/derailed/k9s/internal/vul"
 	"github.com/derailed/tview"
 	runewidth "github.com/mattn/go-runewidth"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/duration"
 )
 
-func runesToNum(rr []rune) int {
-	var n int
-	m := 1
+func computeVulScore(spec *v1.PodSpec) string {
+	if vul.ImgScanner == nil {
+		return "0"
+	}
+	ii := ExtractImages(spec)
+	vul.ImgScanner.Enqueue(ii...)
+
+	return vul.ImgScanner.Score(ii...)
+}
+
+func runesToNum(rr []rune) int64 {
+	var r int64
+	var m int64 = 1
 	for i := len(rr) - 1; i >= 0; i-- {
-		v := int(rr[i] - '0')
-		n += v * m
+		v := int64(rr[i] - '0')
+		r += v * m
 		m *= 10
 	}
 
-	return n
+	return r
 }
 
-func durationToSeconds(duration string) string {
+func durationToSeconds(duration string) int64 {
 	if len(duration) == 0 {
-		return duration
+		return 0
+	}
+	if duration == NAValue {
+		return math.MaxInt64
 	}
 
 	num := make([]rune, 0, 5)
-	var n, m int
+	var n, m int64
 	for _, r := range duration {
 		switch r {
 		case 'y':
@@ -54,7 +74,12 @@ func durationToSeconds(duration string) string {
 		n, num = n+runesToNum(num)*m, num[:0]
 	}
 
-	return strconv.Itoa(n)
+	return n
+}
+
+func capacityToNumber(capacity string) int64 {
+	quantity := resource.MustParse(capacity)
+	return quantity.Value()
 }
 
 // AsThousands prints a number with thousand separator.
@@ -72,10 +97,12 @@ func Happy(ns string, h Header, r Row) bool {
 	if validCol < 0 {
 		return true
 	}
+
 	return strings.TrimSpace(r.Fields[validCol]) == ""
 }
 
-func asStatus(err error) string {
+// AsStatus returns error as string.
+func AsStatus(err error) string {
 	if err == nil {
 		return ""
 	}
@@ -110,13 +137,6 @@ func blank(s []string) bool {
 		}
 	}
 	return true
-}
-
-func strpToStr(p *string) string {
-	if p == nil || *p == "" {
-		return MissingValue
-	}
-	return *p
 }
 
 // Join a slice of strings, skipping blanks.
@@ -173,6 +193,13 @@ func missing(s string) string {
 	return check(s, MissingValue)
 }
 
+func naStrings(ss []string) string {
+	if len(ss) == 0 {
+		return NAValue
+	}
+	return strings.Join(ss, ",")
+}
+
 func na(s string) string {
 	return check(s, NAValue)
 }
@@ -194,17 +221,26 @@ func boolToStr(b bool) string {
 	}
 }
 
-func toAge(timestamp metav1.Time) string {
-	return time.Since(timestamp.Time).String()
+// ToAge converts time to human duration.
+func ToAge(t metav1.Time) string {
+	if t.IsZero() {
+		return UnknownValue
+	}
+
+	return duration.HumanDuration(time.Since(t.Time))
 }
 
 func toAgeHuman(s string) string {
-	d, err := time.ParseDuration(s)
+	if len(s) == 0 {
+		return UnknownValue
+	}
+
+	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		return NAValue
 	}
 
-	return duration.HumanDuration(d)
+	return duration.HumanDuration(time.Since(t))
 }
 
 // Truncate a string to the given l and suffix ellipsis if needed.
@@ -287,6 +323,13 @@ func boolPtrToStr(b *bool) string {
 	}
 
 	return boolToStr(*b)
+}
+
+func strPtrToStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // Check if string is in a string list.

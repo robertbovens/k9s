@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -6,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/derailed/k9s/internal/client"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,7 +47,7 @@ func (Namespace) Header(string) Header {
 		HeaderColumn{Name: "STATUS"},
 		HeaderColumn{Name: "LABELS", Wide: true},
 		HeaderColumn{Name: "VALID", Wide: true},
-		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
+		HeaderColumn{Name: "AGE", Time: true},
 	}
 }
 
@@ -52,7 +55,7 @@ func (Namespace) Header(string) Header {
 func (n Namespace) Render(o interface{}, _ string, r *Row) error {
 	raw, ok := o.(*unstructured.Unstructured)
 	if !ok {
-		return fmt.Errorf("Expected Namespace, but got %T", o)
+		return fmt.Errorf("expected Namespace, but got %T", o)
 	}
 	var ns v1.Namespace
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw.Object, &ns)
@@ -65,8 +68,8 @@ func (n Namespace) Render(o interface{}, _ string, r *Row) error {
 		ns.Name,
 		string(ns.Status.Phase),
 		mapToStr(ns.Labels),
-		asStatus(n.diagnose(ns.Status.Phase)),
-		toAge(ns.ObjectMeta.CreationTimestamp),
+		AsStatus(n.diagnose(ns.Status.Phase)),
+		ToAge(ns.GetCreationTimestamp()),
 	}
 
 	return nil

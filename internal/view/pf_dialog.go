@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -58,12 +61,10 @@ func ShowPortForwards(v ResourceViewer, path string, ports port.ContainerPortSpe
 		address = h
 	})
 	for i := 0; i < 3; i++ {
-		field, ok := f.GetFormItem(i).(*tview.InputField)
-		if !ok {
-			continue
+		if field, ok := f.GetFormItem(i).(*tview.InputField); ok {
+			field.SetLabelColor(styles.LabelFgColor.Color())
+			field.SetFieldTextColor(styles.FieldFgColor.Color())
 		}
-		field.SetLabelColor(styles.LabelFgColor.Color())
-		field.SetFieldTextColor(styles.FieldFgColor.Color())
 	}
 
 	f.AddButton("OK", func() {
@@ -85,12 +86,10 @@ func ShowPortForwards(v ResourceViewer, path string, ports port.ContainerPortSpe
 		DismissPortForwards(v, pages)
 	})
 	for i := 0; i < 2; i++ {
-		b := f.GetButton(i)
-		if b == nil {
-			continue
+		if b := f.GetButton(i); b != nil {
+			b.SetBackgroundColorActivated(styles.ButtonFocusBgColor.Color())
+			b.SetLabelColorActivated(styles.ButtonFocusFgColor.Color())
 		}
-		b.SetBackgroundColorActivated(styles.ButtonFocusBgColor.Color())
-		b.SetLabelColorActivated(styles.ButtonFocusFgColor.Color())
 	}
 
 	modal := tview.NewModalForm("<PortForward>", f)

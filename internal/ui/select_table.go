@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package ui
 
 import (
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 )
 
 // SelectTable represents a table with selections.
@@ -41,7 +44,10 @@ func (s *SelectTable) SelectFirstRow() {
 // GetSelectedItems return currently marked or selected items names.
 func (s *SelectTable) GetSelectedItems() []string {
 	if len(s.marks) == 0 {
-		return []string{s.GetSelectedItem()}
+		if item := s.GetSelectedItem(); item != "" {
+			return []string{item}
+		}
+		return nil
 	}
 
 	items := make([]string, 0, len(s.marks))
@@ -99,6 +105,9 @@ func (s *SelectTable) GetSelectedRowIndex() int {
 func (s *SelectTable) SelectRow(r int, broadcast bool) {
 	if !broadcast {
 		s.SetSelectionChangedFunc(nil)
+	}
+	if c := s.model.Count(); c > 0 && r-1 > c {
+		r = c + 1
 	}
 	defer s.SetSelectionChangedFunc(s.selectionChanged)
 	s.Select(r, 0)

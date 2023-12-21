@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
-	"strings"
-
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/ui"
 )
@@ -22,7 +23,7 @@ func loadCustomViewers() MetaViewers {
 
 func helmViewers(vv MetaViewers) {
 	vv[client.NewGVR("helm")] = MetaViewer{
-		viewerFn: NewHelm,
+		viewerFn: NewHelmChart,
 	}
 }
 
@@ -45,6 +46,9 @@ func coreViewers(vv MetaViewers) {
 	vv[client.NewGVR("v1/secrets")] = MetaViewer{
 		viewerFn: NewSecret,
 	}
+	vv[client.NewGVR("scheduling.k8s.io/v1/priorityclasses")] = MetaViewer{
+		viewerFn: NewPriorityClass,
+	}
 	vv[client.NewGVR("v1/configmaps")] = MetaViewer{
 		viewerFn: NewConfigMap,
 	}
@@ -60,12 +64,11 @@ func miscViewers(vv MetaViewers) {
 	vv[client.NewGVR("contexts")] = MetaViewer{
 		viewerFn: NewContext,
 	}
-	// BOZO!! revamp with latest...
-	// vv[client.NewGVR("openfaas")] = MetaViewer{
-	// 	viewerFn: NewOpenFaas,
-	// }
 	vv[client.NewGVR("containers")] = MetaViewer{
 		viewerFn: NewContainer,
+	}
+	vv[client.NewGVR("scans")] = MetaViewer{
+		viewerFn: NewImageScan,
 	}
 	vv[client.NewGVR("portforwards")] = MetaViewer{
 		viewerFn: NewPortForward,
@@ -151,13 +154,9 @@ func extViewers(vv MetaViewers) {
 	vv[client.NewGVR("apiextensions.k8s.io/v1/customresourcedefinitions")] = MetaViewer{
 		enterFn: showCRD,
 	}
-	vv[client.NewGVR("apiextensions.k8s.io/v1/customresourcedefinitions")] = MetaViewer{
-		enterFn: showCRD,
-	}
 }
 
 func showCRD(app *App, _ ui.Tabular, _, path string) {
-	_, crdGVR := client.Namespaced(path)
-	tokens := strings.Split(crdGVR, ".")
-	app.gotoResource(tokens[0], "", false)
+	_, crd := client.Namespaced(path)
+	app.gotoResource(crd, "", false)
 }

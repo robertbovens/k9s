@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package client
 
 import (
@@ -75,6 +78,7 @@ func (c *Config) SwitchContext(name string) error {
 	flags := genericclioptions.NewConfigFlags(UsePersistentConfig)
 	flags.Context = &name
 	flags.Timeout = c.flags.Timeout
+	flags.KubeConfig = c.flags.KubeConfig
 	c.flags = flags
 
 	return nil
@@ -91,6 +95,19 @@ func (c *Config) CurrentContextName() (string, error) {
 	}
 
 	return cfg.CurrentContext, nil
+}
+
+func (c *Config) CurrentContextNamespace() (string, error) {
+	name, err := c.CurrentContextName()
+	if err != nil {
+		return "", err
+	}
+	context, err := c.GetContext(name)
+	if err != nil {
+		return "", err
+	}
+
+	return context.Namespace, nil
 }
 
 // GetContext fetch a given context or error if it does not exists.
@@ -130,6 +147,36 @@ func (c *Config) DelContext(n string) error {
 	}
 
 	return clientcmd.ModifyConfig(acc, cfg, true)
+}
+
+// RenameContext renames a context.
+func (c *Config) RenameContext(old string, new string) error {
+	cfg, err := c.RawConfig()
+	if err != nil {
+		return err
+	}
+
+	if _, ok := cfg.Contexts[new]; ok {
+		return fmt.Errorf("context with name %s already exists", new)
+	}
+	cfg.Contexts[new] = cfg.Contexts[old]
+	delete(cfg.Contexts, old)
+	acc, err := c.ConfigAccess()
+	if err != nil {
+		return err
+	}
+	if e := clientcmd.ModifyConfig(acc, cfg, true); e != nil {
+		return e
+	}
+	current, err := c.CurrentContextName()
+	if err != nil {
+		return err
+	}
+	if current == old {
+		return c.SwitchContext(new)
+	}
+
+	return nil
 }
 
 // ContextNames fetch all available contexts.
@@ -251,6 +298,13 @@ func (c *Config) CurrentUserName() (string, error) {
 // CurrentNamespaceName retrieves the active namespace.
 func (c *Config) CurrentNamespaceName() (string, error) {
 	ns, _, err := c.clientConfig().Namespace()
+
+	if ns == "default" {
+		ns, err = c.CurrentContextNamespace()
+		if ns == "" && err == nil {
+			return "", errors.New("No namespace specified in context")
+		}
+	}
 
 	return ns, err
 }

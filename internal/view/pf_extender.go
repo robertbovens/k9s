@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -8,7 +11,7 @@ import (
 	"github.com/derailed/k9s/internal/port"
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/k9s/internal/watch"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	"github.com/rs/zerolog/log"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -47,17 +50,8 @@ func (p *PortForwardExtender) portFwdCmd(evt *tcell.EventKey) *tcell.EventKey {
 		p.App().Flash().Err(err)
 		return nil
 	}
-	pod, err := fetchPod(p.App().factory, podName)
-	if err != nil {
+	if err := ensurePodPortFwdAllowed(p.App().factory, podName); err != nil {
 		p.App().Flash().Err(err)
-		return nil
-	}
-	if pod.Status.Phase != v1.PodRunning {
-		p.App().Flash().Errf("pod must be running. Current status=%v", pod.Status.Phase)
-		return nil
-	}
-	if p.App().factory.Forwarders().IsPodForwarded(path) {
-		p.App().Flash().Errf("A PortForward already exist for pod %s", pod.Name)
 		return nil
 	}
 	if err := showFwdDialog(p, podName, startFwdCB); err != nil {
@@ -82,6 +76,18 @@ func (p *PortForwardExtender) fetchPodName(path string) (string, error) {
 
 // ----------------------------------------------------------------------------
 // Helpers...
+
+func ensurePodPortFwdAllowed(factory dao.Factory, podName string) error {
+	pod, err := fetchPod(factory, podName)
+	if err != nil {
+		return err
+	}
+	if pod.Status.Phase != v1.PodRunning {
+		return fmt.Errorf("pod must be running. Current status=%v", pod.Status.Phase)
+	}
+
+	return nil
+}
 
 func runForward(v ResourceViewer, pf watch.Forwarder, f *portforward.PortForwarder) {
 	v.App().factory.AddForwarder(pf)
@@ -110,7 +116,7 @@ func startFwdCB(v ResourceViewer, path string, pts port.PortTunnels) error {
 	tt := make([]string, 0, len(pts))
 	for _, pt := range pts {
 		if _, ok := v.App().factory.ForwarderFor(dao.PortForwardID(path, pt.Container, pt.PortMap())); ok {
-			return fmt.Errorf("A port-forward is already active on pod %s", path)
+			return fmt.Errorf("port-forward is already active on pod %s", path)
 		}
 		pf := dao.NewPortForwarder(v.App().factory)
 		fwd, err := pf.Start(path, pt)

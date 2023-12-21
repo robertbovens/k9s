@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -10,9 +13,8 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/perf"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 )
 
 // Benchmark represents a service benchmark results view.
@@ -27,7 +29,6 @@ func NewBenchmark(gvr client.GVR) ResourceViewer {
 	}
 	b.GetTable().SetBorderFocusColor(tcell.ColorSeaGreen)
 	b.GetTable().SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorSeaGreen).Attributes(tcell.AttrNone))
-	b.GetTable().SetColorerFn(render.Benchmark{}.ColorerFunc())
 	b.GetTable().SetSortCol(ageCol, true)
 	b.SetContextFn(b.benchContext)
 	b.GetTable().SetEnterFn(b.viewBench)
@@ -46,8 +47,8 @@ func (b *Benchmark) viewBench(app *App, model ui.Tabular, gvr, path string) {
 		return
 	}
 
-	details := NewDetails(b.App(), "Results", fileToSubject(path), false).Update(data)
-	if err := app.inject(details); err != nil {
+	details := NewDetails(b.App(), "Results", fileToSubject(path), contentYAML, false).Update(data)
+	if err := app.inject(details, false); err != nil {
 		app.Flash().Err(err)
 	}
 }

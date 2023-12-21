@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render_test
 
 import (
@@ -10,8 +13,8 @@ import (
 func TestCronJobRender(t *testing.T) {
 	c := render.CronJob{}
 	r := render.NewRow(6)
-	c.Render(load(t, "cj"), "", &r)
 
+	assert.NoError(t, c.Render(load(t, "cj"), "", &r))
 	assert.Equal(t, "default/hello", r.ID)
 	assert.Equal(t, render.Fields{"default", "hello", "*/1 * * * *", "false", "0"}, r.Fields[:5])
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -5,9 +8,8 @@ import (
 
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 )
 
 // Group presents a RBAC group viewer.
@@ -18,7 +20,6 @@ type Group struct {
 // NewGroup returns a new subject viewer.
 func NewGroup(gvr client.GVR) ResourceViewer {
 	g := Group{ResourceViewer: NewBrowser(gvr)}
-	g.GetTable().SetColorerFn(render.Subject{}.ColorerFunc())
 	g.AddBindKeysFn(g.bindKeys)
 	g.SetContextFn(g.subjectCtx)
 
@@ -42,7 +43,7 @@ func (g *Group) policyCmd(evt *tcell.EventKey) *tcell.EventKey {
 	if path == "" {
 		return evt
 	}
-	if err := g.App().inject(NewPolicy(g.App(), "Group", path)); err != nil {
+	if err := g.App().inject(NewPolicy(g.App(), "Group", path), false); err != nil {
 		g.App().Flash().Err(err)
 	}
 

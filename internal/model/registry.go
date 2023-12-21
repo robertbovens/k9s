@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package model
 
 import (
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/render"
+	"github.com/derailed/k9s/internal/render/helm"
 	"github.com/derailed/k9s/internal/xray"
 )
 
@@ -22,18 +26,21 @@ var Registry = map[string]ResourceMeta{
 		DAO: &dao.Pulse{},
 	},
 	"helm": {
-		DAO:      &dao.Helm{},
-		Renderer: &render.Helm{},
+		DAO:      &dao.HelmChart{},
+		Renderer: &helm.Chart{},
 	},
-	// BOZO!! revamp with latest...
-	// "openfaas": {
-	// 	DAO:      &dao.OpenFaas{},
-	// 	Renderer: &render.OpenFaas{},
-	// },
+	"helm-history": {
+		DAO:      &dao.HelmHistory{},
+		Renderer: &helm.History{},
+	},
 	"containers": {
 		DAO:          &dao.Container{},
 		Renderer:     &render.Container{},
 		TreeRenderer: &xray.Container{},
+	},
+	"scans": {
+		DAO:      &dao.ImageScan{},
+		Renderer: &render.ImageScan{},
 	},
 	"contexts": {
 		DAO:      &dao.Context{},
@@ -142,27 +149,13 @@ var Registry = map[string]ResourceMeta{
 	},
 
 	// Batch...
-	"batch/v1beta1/cronjobs": {
+	"batch/v1/cronjobs": {
 		DAO:      &dao.CronJob{},
 		Renderer: &render.CronJob{},
 	},
 	"batch/v1/jobs": {
 		DAO:      &dao.Job{},
 		Renderer: &render.Job{},
-	},
-
-	// Autoscaling...
-	"autoscaling/v1/horizontalpodautoscalers": {
-		DAO:      &dao.HorizontalPodAutoscaler{},
-		Renderer: &render.HorizontalPodAutoscaler{},
-	},
-	"autoscaling/v2beta1/horizontalpodautoscalers": {
-		DAO:      &dao.HorizontalPodAutoscaler{},
-		Renderer: &render.HorizontalPodAutoscaler{},
-	},
-	"autoscaling/v2beta2/horizontalpodautoscalers": {
-		DAO:      &dao.HorizontalPodAutoscaler{},
-		Renderer: &render.HorizontalPodAutoscaler{},
 	},
 
 	// CRDs...

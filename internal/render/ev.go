@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -5,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/derailed/k9s/internal/client"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	metav1beta1 "k8s.io/apimachinery/pkg/apis/meta/v1beta1"
 )
 
@@ -97,14 +100,4 @@ func (e *Event) Render(o interface{}, ns string, r *Row) error {
 	}
 
 	return nil
-}
-
-func (e *Event) cellFor(n string, row metav1beta1.TableRow) (string, bool) {
-	for i, h := range e.table.ColumnDefinitions {
-		if h.Name == n {
-			return fmt.Sprintf("%v", row.Cells[i]), true
-		}
-	}
-
-	return "", false
 }

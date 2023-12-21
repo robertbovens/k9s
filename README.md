@@ -39,15 +39,13 @@ Wanna discuss K9s features with your fellow `K9sers` or simply show your support
 * Channel: [K9ersSlack](https://k9sers.slack.com/)
 * Invite: [K9slackers Invite](https://join.slack.com/t/k9sers/shared_invite/enQtOTA5MDEyNzI5MTU0LWQ1ZGI3MzliYzZhZWEyNzYxYzA3NjE0YTk1YmFmNzViZjIyNzhkZGI0MmJjYzhlNjdlMGJhYzE2ZGU1NjkyNTM)
 
----
-
 ## Installation
 
 K9s is available on Linux, macOS and Windows platforms.
 
 * Binaries for Linux, Windows and Mac are available as tarballs in the [release](https://github.com/derailed/k9s/releases) page.
 
-* Via Homebrew for macOS or LinuxBrew for Linux
+* Via [Homebrew](https://brew.sh/) for macOS or Linux
 
    ```shell
    brew install k9s
@@ -58,6 +56,11 @@ K9s is available on Linux, macOS and Windows platforms.
    ```shell
    sudo port install k9s
    ```
+* Via [snap](https://snapcraft.io/k9s) for Linux
+
+  ```shell
+  snap install k9s --devmode
+  ```
 
 * On Arch Linux
 
@@ -69,6 +72,17 @@ K9s is available on Linux, macOS and Windows platforms.
 
   ```shell
   zypper install k9s
+  ```
+
+* On FreeBSD
+
+  ```shell
+  pkg install k9s
+  ```
+
+* Via [Winget](https://github.com/microsoft/winget-cli) for Windows
+  ```shell
+  winget install k9s
   ```
 
 * Via [Scoop](https://scoop.sh) for Windows
@@ -87,7 +101,7 @@ K9s is available on Linux, macOS and Windows platforms.
 
   ```shell
   # NOTE: The dev version will be in effect!
-  go get -u github.com/derailed/k9s
+  go install github.com/derailed/k9s@latest
   ```
 
 * Via [Webi](https://webinstall.dev) for Linux and macOS
@@ -96,10 +110,22 @@ K9s is available on Linux, macOS and Windows platforms.
   curl -sS https://webinstall.dev/k9s | bash
   ```
 
+* Via [pkgx](https://pkgx.dev/pkgs/k9scli.io/) for Linux and macOS
+
+  ```shell
+  pkgx k9s
+  ```
+
 * Via [Webi](https://webinstall.dev) for Windows
 
   ```shell
   curl.exe -A MS https://webinstall.dev/k9s | powershell
+  ```
+
+* As a [Docker Desktop Extension](https://docs.docker.com/desktop/extensions/) (for the Docker Desktop built in Kubernetes Server)
+
+  ```shell
+  docker extension install spurin/k9s-dd-extension:latest
   ```
 
 ---
@@ -170,11 +196,26 @@ K9s is available on Linux, macOS and Windows platforms.
     ```shell
     # Kubectl edit command will use this env var.
     export EDITOR=my_fav_editor
-    # Should your editor deals with streamed vs on disk files differently, also set...
+    # Should your editor deal with streamed vs on disk files differently, also set...
     export K9S_EDITOR=my_fav_editor
     ```
 
 * K9s prefers recent kubernetes versions ie 1.16+
+
+---
+
+## K8S Compatibility Matrix
+
+|         k9s        | k8s client |
+| ------------------ | ---------- |
+|     >= v0.27.0     |   0.26.1   |
+| v0.26.7 - v0.26.6  |   0.25.3   |
+| v0.26.5 - v0.26.4  |   0.25.1   |
+| v0.26.3 - v0.26.1  |   0.24.3   |
+| v0.26.0 - v0.25.19 |   0.24.2   |
+| v0.25.18 - v0.25.3 |   0.22.3   |
+| v0.25.2 - v0.25.0  |   0.22.0   |
+|      <= v0.24      |   0.21.3   |
 
 ---
 
@@ -235,12 +276,12 @@ K9s uses aliases to navigate most K8s resources.
 | Fuzzy find a resource given a filter                           | `/`-f filter⏎                 |                                                                        |
 | Bails out of view/command/filter mode                          | `<esc>`                       |                                                                        |
 | Key mapping to describe, view, edit, view logs,...             | `d`,`v`, `e`, `l`,...         |                                                                        |
-| To view and switch to another Kubernetes context               | `:`ctx⏎                       |                                                                        |
-| To view and switch to another Kubernetes context               | `:`ctx context-name⏎          |                                                                        |
+| To view and switch to another Kubernetes context (Pod view)    | `:`ctx⏎                       |                                                                        |
+| To view and switch directly to another Kubernetes context (Last used view) | `:`ctx context-name⏎          |                                                                        |
 | To view and switch to another Kubernetes namespace             | `:`ns⏎                        |                                                                        |
 | To view all saved resources                                    | `:`screendump or sd⏎          |                                                                        |
 | To delete a resource (TAB and ENTER to confirm)                | `ctrl-d`                      |                                                                        |
-| To kill a resource (no confirmation dialog!)                   | `ctrl-k`                      |                                                                        |
+| To kill a resource (no confirmation dialog, equivalent to kubectl delete --now)                   | `ctrl-k`                      |                                                                        |
 | Launch pulses view                                             | `:`pulses or pu⏎              |                                                                        |
 | Launch XRay view                                               | `:`xray RESOURCE [NAMESPACE]⏎ | RESOURCE can be one of po, svc, dp, rs, sts, ds, NAMESPACE is optional |
 | Launch Popeye view                                             | `:`popeye or pop⏎             | See [popeye](#popeye)                                               |
@@ -278,7 +319,7 @@ K9s uses aliases to navigate most K8s resources.
 
 ## K9s Configuration
 
-  K9s keeps its configurations inside of a `k9s` directory and the location depends on your operating system. K9s leverages [XDG](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) to load its various configurations files. For information on the default locations for your OS please see [this link](https://github.com/adrg/xdg/blob/master/README.md). If you are still confused a quick `k9s info` will reveal where k9s is loading its configurations from. Alternatively, you can set `K9SCONFIG` to tell K9s the directory location to pull its configurations from.
+  K9s keeps its configurations as YAML files inside of a `k9s` directory and the location depends on your operating system. K9s leverages [XDG](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) to load its various configurations files. For information on the default locations for your OS please see [this link](https://github.com/adrg/xdg/blob/master/README.md). If you are still confused a quick `k9s info` will reveal where k9s is loading its configurations from. Alternatively, you can set `K9SCONFIG` to tell K9s the directory location to pull its configurations from.
 
   | Unix            | macOS                              | Windows               |
   |-----------------|------------------------------------|-----------------------|
@@ -286,9 +327,13 @@ K9s uses aliases to navigate most K8s resources.
 
   > NOTE: This is still in flux and will change while in pre-release stage!
 
+  > NOTE! Thanks to [Mr Alexandru Placenta](https://github.com/placintaalexandru) the config files can now use either `.yml` or `.yaml` mimes.
+
   ```yaml
   # $XDG_CONFIG_HOME/k9s/config.yml
   k9s:
+    # Enable periodic refresh of resource browser windows. Default false
+    liveViewAutoRefresh: false
     # Represents ui poll intervals. Default 2secs
     refreshRate: 2
     # Number of retries once the connection to the api-server is lost. Default 15.
@@ -301,16 +346,22 @@ K9s uses aliases to navigate most K8s resources.
     crumbsless: false
     # Indicates whether modification commands like delete/kill/edit are disabled. Default is false
     readOnly: false
+    # Toggles whether k9s should exit when CTRL-C is pressed. When set to true, you will need to exist k9s via the :quit command. Default is false.
+    noExitOnCtrlC: false
     # Toggles icons display as not all terminal support these chars.
     noIcons: false
+    # Toggles whether k9s should check for the latest revision from the Github repository releases. Default is false.
+    skipLatestRevCheck: false
+    # When altering kubeconfig or using multiple kube configs, k9s will clean up clusters configurations that are no longer in use. Setting this flag to true will keep k9s from cleaning up inactive cluster configs. Defaults to false.
+    keepMissingClusters: false
     # Logs configuration
     logger:
       # Defines the number of lines to return. Default 100
       tail: 200
       # Defines the total number of log lines to allow in the view. Default 1000
       buffer: 500
-      # Represents how far to go back in the log timeline in seconds. Setting to -1 will show all available logs. Default is 5min.
-      sinceSeconds: 300
+      # Represents how far to go back in the log timeline in seconds. Setting to -1 will tail logs. Default is -1.
+      sinceSeconds: 300 # => tail the last 5 mins.
       # Go full screen while displaying logs. Default false
       fullScreenLogs: false
       # Toggles log line wrap. Default false
@@ -321,11 +372,27 @@ K9s uses aliases to navigate most K8s resources.
     currentContext: minikube
     # Indicates the current kube cluster. Defaults to current context cluster
     currentCluster: minikube
+    # KeepMissingClusters will keep clusters in the config if they are missing from the current kubeconfig file. Default false
+    KeepMissingClusters: false
+    # Provide shell pod customization when nodeShell feature gate is enabled!
+    shellPod:
+      # The shell pod image to use.
+      image: killerAdmin
+      # The namespace to launch to shell pod into.
+      namespace: default
+      # The resource limit to set on the shell pod.
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      # Enable TTY
+      tty: true
     # Persists per cluster preferences for favorite namespaces and view.
     clusters:
       coolio:
         namespace:
           active: coolio
+          # With this set, the favorites list won't be updated as you switch namespaces
+          lockFavorites: false
           favorites:
           - cassandra
           - default
@@ -333,17 +400,7 @@ K9s uses aliases to navigate most K8s resources.
           active: po
         featureGates:
           # Toggles NodeShell support. Allow K9s to shell into nodes if needed. Default false.
-          nodeShell: false
-        # Provide shell pod customization of feature gate is enabled
-        shellPod:
-          # The shell pod image to use.
-          image: killerAdmin
-          # The namespace to launch to shell pod into.
-          namespace: fred
-          # The resource limit to set on the shell pod.
-          limits:
-            cpu: 100m
-            memory: 100Mi
+          nodeShell: true
         # The IP Address to use when launching a port-forward.
         portForwardAddress: 1.2.3.4
       kind:
@@ -355,7 +412,7 @@ K9s uses aliases to navigate most K8s resources.
           - default
         view:
           active: dp
-    # The path to screen dump. Default: '%temp_dir%/k9s-screens-%username%' (k9s info) 
+    # The path to screen dump. Default: '%temp_dir%/k9s-screens-%username%' (k9s info)
     screenDumpDir: /tmp
   ```
 
@@ -374,19 +431,19 @@ By enabling the nodeShell feature gate on a given cluster, K9s allows you to she
 ```yaml
 # $XDG_CONFIG_HOME/k9s/config.yml
 k9s:
+  # You can also further tune the shell pod specification
+  shellPod:
+    image: cool_kid_admin:42
+    namespace: blee
+    limits:
+      cpu: 100m
+      memory: 100Mi
   clusters:
     # Configures node shell on cluster blee
     blee:
       featureGates:
         # You must enable the nodeShell feature gate to enable shelling into nodes
         nodeShell: true
-      # You can also further tune the shell pod specification
-      shellPod:
-        image: cool_kid_admin:42
-        namespace: blee
-        limits:
-          cpu: 100m
-          memory: 100Mi
 ```
 
 ---
@@ -445,8 +502,10 @@ Entering the command mode and typing a resource name or alias, could be cumberso
 
 As of v0.25.0, you can leverage the `FastForwards` feature to tell K9s how to default port-forwards. In situations where you are dealing with multiple containers or containers exposing multiple ports, it can be cumbersome to specify the desired port-forward from the dialog as in most cases, you already know which container/port tuple you desire. For these use cases, you can now annotate your manifests with the following annotations:
 
-1. k9scli.io/auto-portforwards -> activates one or more port-forwards directly bypassing the port-forward dialog all together.
-2. k9scli.io/portforwards      -> pre-selects one or more port-forwards when launching the port-forward dialog.
+- `k9scli.io/auto-port-forwards`
+  activates one or more port-forwards directly bypassing the port-forward dialog all together.
+- `k9scli.io/port-forwards`
+  pre-selects one or more port-forwards when launching the port-forward dialog.
 
 The annotation value takes on the shape `container-name::[local-port:]container-port`
 
@@ -461,10 +520,10 @@ kind: Pod
 metadata:
   name: fred
   annotations:
-    k9scli.io/auto-portforwards: zorg::5556        # => will default to container zorg port 5556 and local port 5566. No port-forward dialog will be shown.
+    k9scli.io/auto-port-forwards: zorg::5556        # => will default to container zorg port 5556 and local port 5566. No port-forward dialog will be shown.
     # Or...
-    k9scli.io/portforward: bozo::9090:p1           # => launches the port-forward dialog selecting default port-forward on container bozo port named p1(8081)
-                                                   # mapping to local port 9090.
+    k9scli.io/port-forwards: bozo::9090:p1          # => launches the port-forward dialog selecting default port-forward on container bozo port named p1(8081)
+                                                    # mapping to local port 9090.
     ...
 spec:
   containers:
@@ -552,6 +611,8 @@ K9s does provide additional environment variables for you to customize your plug
 * `$GROUPS` the active groups
 * `$POD` while in a container view
 * `$COL-<RESOURCE_COLUMN_NAME>` use a given column name for a viewed resource. Must be prefixed by `COL-`!
+
+Curly braces can be used to embed an environment variable inside another string, or if the column name contains special characters. (e.g. `${NAME}-example` or `${COL-%CPU/L}`)
 
 ### Example
 
@@ -749,21 +810,36 @@ Example: Dracula Skin ;)
 
 <img src="assets/skins/dracula.png" alt="Dracula Skin">
 
-You can style K9s based on your own sense of look and style. Skins are YAML files, that enable a user to change the K9s presentation layer. K9s skins are loaded from `$XDG_CONFIG_HOME/k9s/skin.yml`. If a skin file is detected then the skin would be loaded if not the current stock skin remains in effect.
+You can style K9s based on your own sense of look and style. Skins are YAML files, that enable a user to change the K9s presentation layer. K9s default skin is loaded from `$XDG_CONFIG_HOME/k9s/skin.yml`. If a skin file is detected then the skin will be loaded if not the current stock skin remains in effect.
 
-You can also change K9s skins based on the cluster you are connecting too. In this case, you can specify the skin file name as `$XDG_CONFIG_HOME/k9s/mycontext_skin.yml`
-Below is a sample skin file, more skins are available in the skins directory in this repo, just simply copy any of these in your user's home dir as `skin.yml`.
+You can also change K9s skins based on the cluster you are connecting too. In this case, you can specify a skin field on your cluster config aka `skin: dracula` (just the name of the skin!) and copy this repo skins/dracula.yml to `$XDG_CONFIG_HOME/k9s/skins` directory.
+Below is a sample skin file, more skins are available in the skins directory in this repo, just simply copy any of these in your k9s home dir as `skin.yml`.
 
 Colors can be defined by name or using a hex representation. Of recent, we've added a color named `default` to indicate a transparent background color to preserve your terminal background color settings if so desired.
 
 > NOTE: This is very much an experimental feature at this time, more will be added/modified if this feature has legs so thread accordingly!
-
-
 > NOTE: Please see [K9s Skins](https://k9scli.io/topics/skins/) for a list of available colors.
 
+```yaml
+# Make cluster fred display in_the_navy skin when loaded...
+k9s:
+  ...
+  clusters:
+    fred:
+      # Override the default skin and use this skin for this cluster.
+      # NOTE: Just the skin file name to extension!
+      skin: in_the_navy # -> Look for a skin file in ~/.config/k9s/skins/in_the_navy.yml
+      namespace:
+        ...
+      view:
+        active: pod
+      featureGates:
+        nodeShell: false
+      portForwardAddress: localhost
+```
 
 ```yaml
-# Skin InTheNavy...
+# in_the_navy.yml: Skin InTheNavy...
 k9s:
   # General K9s styles
   body:
@@ -831,8 +907,13 @@ k9s:
       valueColor: royalblue
     # Logs styles.
     logs:
-      fgColor: white
+      fgColor: lightskyblue
       bgColor: black
+      indicator:
+        fgColor: dodgerblue
+        bgColor: black
+        toggleOnColor: limegreen
+        toggleOffColor: gray
 ```
 
 ---
@@ -872,6 +953,8 @@ to make this project a reality!
 * [Fernand Galiana](https://github.com/derailed)
   * <img src="assets/mail.png" width="16" height="auto" alt="email"/>  fernand@imhotep.io
   * <img src="assets/twitter.png" width="16" height="auto" alt="twitter"/> [@kitesurfer](https://twitter.com/kitesurfer?lang=en)
+
+* [Aleksei Romanenko](https://github.com/slimus)
 
 We always enjoy hearing from folks who benefit from our work!
 

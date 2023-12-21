@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -29,7 +32,7 @@ func (RoleBinding) Header(ns string) Header {
 		HeaderColumn{Name: "SUBJECTS"},
 		HeaderColumn{Name: "LABELS", Wide: true},
 		HeaderColumn{Name: "VALID", Wide: true},
-		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
+		HeaderColumn{Name: "AGE", Time: true},
 	)
 }
 
@@ -37,7 +40,7 @@ func (RoleBinding) Header(ns string) Header {
 func (r RoleBinding) Render(o interface{}, ns string, row *Row) error {
 	raw, ok := o.(*unstructured.Unstructured)
 	if !ok {
-		return fmt.Errorf("Expected RoleBinding, but got %T", o)
+		return fmt.Errorf("expected RoleBinding, but got %T", o)
 	}
 	var rb rbacv1.RoleBinding
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw.Object, &rb)
@@ -59,7 +62,7 @@ func (r RoleBinding) Render(o interface{}, ns string, row *Row) error {
 		ss,
 		mapToStr(rb.Labels),
 		"",
-		toAge(rb.ObjectMeta.CreationTimestamp),
+		ToAge(rb.GetCreationTimestamp()),
 	)
 
 	return nil

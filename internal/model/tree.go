@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package model
 
 import (
@@ -223,7 +226,7 @@ func (t *Tree) reconcile(ctx context.Context) error {
 
 	root.Sort()
 	if t.query != "" {
-		t.root = root.Filter(t.query, rxFilter)
+		t.root = root.Filter(t.query, rxMatch)
 	}
 	if t.root == nil || t.root.Diff(root) {
 		t.root = root
@@ -274,7 +277,7 @@ func (t *Tree) getMeta(ctx context.Context, gvr string) (ResourceMeta, error) {
 // ----------------------------------------------------------------------------
 // Helpers...
 
-func rxFilter(q, path string) bool {
+func rxMatch(q, path string) bool {
 	rx := regexp.MustCompile(`(?i)` + q)
 
 	tokens := strings.Split(path, "::")
@@ -305,7 +308,7 @@ func genericTreeHydrate(ctx context.Context, ns string, table *metav1beta1.Table
 		return fmt.Errorf("expecting xray.Generic renderer but got %T", re)
 	}
 
-	tre.SetTable(table)
+	tre.SetTable(ns, table)
 	// BOZO!! Need table row sorter!!
 	for _, row := range table.Rows {
 		if err := tre.Render(ctx, ns, row); err != nil {

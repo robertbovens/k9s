@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view_test
 
 import (
@@ -10,7 +13,7 @@ import (
 
 func TestAppNew(t *testing.T) {
 	a := view.NewApp(config.NewConfig(ks{}))
-	a.Init("blee", 10)
+	_ = a.Init("blee", 10)
 
 	assert.Equal(t, 11, len(a.GetActions()))
 }

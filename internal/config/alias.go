@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package config
 
 import (
@@ -10,7 +13,7 @@ import (
 )
 
 // K9sAlias manages K9s aliases.
-var K9sAlias = filepath.Join(K9sHome(), "alias.yml")
+var K9sAlias = YamlExtension(filepath.Join(K9sHome(), "alias.yml"))
 
 // Alias tracks shortname to GVR mappings.
 type Alias map[string]string
@@ -143,7 +146,7 @@ func (a *Aliases) loadDefaultAliases() {
 	a.Alias["np"] = "networking.k8s.io/v1/networkpolicies"
 
 	a.declare("help", "h", "?")
-	a.declare("quit", "q", "Q")
+	a.declare("quit", "q", "q!", "qa", "Q")
 	a.declare("aliases", "alias", "a")
 	a.declare("popeye", "pop")
 	a.declare("helm", "charts", "chart", "hm")
@@ -166,7 +169,9 @@ func (a *Aliases) Save() error {
 
 // SaveAliases saves aliases to a given file.
 func (a *Aliases) SaveAliases(path string) error {
-	EnsurePath(path, DefaultDirMod)
+	if err := EnsureDirPath(path, DefaultDirMod); err != nil {
+		return err
+	}
 	cfg, err := yaml.Marshal(a)
 	if err != nil {
 		return err

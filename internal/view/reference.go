@@ -1,12 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
 	"context"
 
 	"github.com/derailed/k9s/internal/client"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 )
 
 // Reference represents resource references.
@@ -19,7 +21,6 @@ func NewReference(gvr client.GVR) ResourceViewer {
 	r := Reference{
 		ResourceViewer: NewBrowser(gvr),
 	}
-	r.GetTable().SetColorerFn(render.Reference{}.ColorerFunc())
 	r.GetTable().SetBorderFocusColor(tcell.ColorMediumSpringGreen)
 	r.GetTable().SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorMediumSpringGreen).Attributes(tcell.AttrNone))
 	r.AddBindKeysFn(r.bindKeys)

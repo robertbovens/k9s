@@ -1,11 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package ui
 
 import (
 	"context"
 	"time"
 
+	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/render"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -55,8 +60,11 @@ type Tabular interface {
 	// Empty returns true if model has no data.
 	Empty() bool
 
+	// Count returns the model data count.
+	Count() int
+
 	// Peek returns current model data.
-	Peek() render.TableData
+	Peek() *render.TableData
 
 	// Watch watches a given resource for changes.
 	Watch(context.Context) error
@@ -74,5 +82,5 @@ type Tabular interface {
 	RemoveListener(model.TableListener)
 
 	// Delete a resource.
-	Delete(ctx context.Context, path string, cascade, force bool) error
+	Delete(context.Context, string, *metav1.DeletionPropagation, dao.Grace) error
 }

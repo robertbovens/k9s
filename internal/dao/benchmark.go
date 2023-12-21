@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package dao
 
 import (
@@ -10,6 +13,7 @@ import (
 
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/render"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -26,7 +30,7 @@ type Benchmark struct {
 }
 
 // Delete nukes a resource.
-func (b *Benchmark) Delete(path string, cascade, force bool) error {
+func (b *Benchmark) Delete(_ context.Context, path string, _ *metav1.DeletionPropagation, _ Grace) error {
 	return os.Remove(path)
 }
 

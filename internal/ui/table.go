@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package ui
 
 import (
@@ -11,9 +14,11 @@ import (
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/k9s/internal/render"
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type (
@@ -21,7 +26,7 @@ type (
 	ColorerFunc func(ns string, evt render.RowEvent) tcell.Color
 
 	// DecorateFunc represents a row decorator.
-	DecorateFunc func(render.TableData) render.TableData
+	DecorateFunc func(*render.TableData)
 
 	// SelectedRowFunc a table selection callback.
 	SelectedRowFunc func(r int)
@@ -29,11 +34,12 @@ type (
 
 // Table represents tabular data.
 type Table struct {
-	gvr     client.GVR
-	sortCol SortColumn
-	header  render.Header
-	Path    string
-	Extras  string
+	gvr        client.GVR
+	sortCol    SortColumn
+	manualSort bool
+	header     render.Header
+	Path       string
+	Extras     string
 	*SelectTable
 	actions     KeyActions
 	cmdBuff     *model.FishBuff
@@ -83,7 +89,7 @@ func (t *Table) GVR() client.GVR { return t.gvr }
 
 // ViewSettingsChanged notifies listener the view configuration changed.
 func (t *Table) ViewSettingsChanged(settings config.ViewSetting) {
-	t.viewSetting = &settings
+	t.viewSetting, t.manualSort = &settings, false
 	t.Refresh()
 }
 
@@ -158,7 +164,7 @@ func (t *Table) ExtraHints() map[string]string {
 }
 
 // GetFilteredData fetch filtered tabular data.
-func (t *Table) GetFilteredData() render.TableData {
+func (t *Table) GetFilteredData() *render.TableData {
 	return t.filtered(t.GetModel().Peek())
 }
 
@@ -178,36 +184,33 @@ func (t *Table) SetSortCol(name string, asc bool) {
 }
 
 // Update table content.
-func (t *Table) Update(data render.TableData, hasMetrics bool) {
+func (t *Table) Update(data *render.TableData, hasMetrics bool) {
 	t.header = data.Header
 	if t.decorateFn != nil {
-		data = t.decorateFn(data)
+		t.decorateFn(data)
 	}
 	t.hasMetrics = hasMetrics
 	t.doUpdate(t.filtered(data))
 	t.UpdateTitle()
 }
 
-func (t *Table) doUpdate(data render.TableData) {
+func (t *Table) doUpdate(data *render.TableData) {
 	if client.IsAllNamespaces(data.Namespace) {
 		t.actions[KeyShiftP] = NewKeyAction("Sort Namespace", t.SortColCmd("NAMESPACE", true), false)
-		t.sortCol.name = "NAMESPACE"
 	} else {
-		t.sortCol.name = "NAME"
 		t.actions.Delete(KeyShiftP)
 	}
 
-	var cols []string
-	if t.viewSetting != nil {
+	cols := t.header.Columns(t.wide)
+	if t.viewSetting != nil && len(t.viewSetting.Columns) > 0 {
 		cols = t.viewSetting.Columns
 	}
-	if len(cols) == 0 {
-		cols = t.header.Columns(t.wide)
-	}
 	custData := data.Customize(cols, t.wide)
-	if t.viewSetting != nil && t.viewSetting.SortColumn != "" {
+	// The sortColumn settings in the configuration file are only used
+	// if the sortCol has not been modified manually
+	if t.viewSetting != nil && t.viewSetting.SortColumn != "" && !t.manualSort {
 		tokens := strings.Split(t.viewSetting.SortColumn, ":")
-		if custData.Header.IndexOf(tokens[0], false) >= 0 {
+		if custData.Header.IndexOf(tokens[0], false) >= 0 && !t.manualSort {
 			t.sortCol.name, t.sortCol.asc = tokens[0], true
 			if len(tokens) == 2 && tokens[1] == "desc" {
 				t.sortCol.asc = false
@@ -215,7 +218,10 @@ func (t *Table) doUpdate(data render.TableData) {
 		}
 	}
 
-	if t.sortCol.name == "NAMESPACE" && !client.IsAllNamespaces(data.Namespace) && len(custData.Header) > 0 {
+	if t.sortCol.name == "" && client.IsAllNamespaces(data.Namespace) {
+		t.sortCol.name = "NAMESPACE"
+	}
+	if t.sortCol.name == "" || (t.sortCol.name == "NAMESPACE" && !client.IsAllNamespaces(data.Namespace)) && len(custData.Header) > 0 {
 		if idx := custData.Header.IndexOf("NAME", false); idx >= 0 {
 			t.sortCol.name = custData.Header[idx].Name
 		} else {
@@ -246,7 +252,8 @@ func (t *Table) doUpdate(data render.TableData) {
 		custData.Namespace,
 		colIndex,
 		custData.Header.IsTimeCol(colIndex),
-		data.Header.IsMetricsCol(colIndex),
+		custData.Header.IsMetricsCol(colIndex),
+		custData.Header.IsCapacityCol(colIndex),
 		t.sortCol.asc,
 	)
 
@@ -310,11 +317,13 @@ func (t *Table) buildRow(r int, re, ore render.RowEvent, h render.Header, pads M
 // SortColCmd designates a sorted column.
 func (t *Table) SortColCmd(name string, asc bool) func(evt *tcell.EventKey) *tcell.EventKey {
 	return func(evt *tcell.EventKey) *tcell.EventKey {
+		t.manualSort = true
 		t.sortCol.asc = !t.sortCol.asc
 		if t.sortCol.name != name {
 			t.sortCol.asc = asc
 		}
 		t.sortCol.name = name
+		t.manualSort = true
 		t.Refresh()
 		return nil
 	}
@@ -375,7 +384,7 @@ func (t *Table) AddHeaderCell(col int, h render.HeaderColumn) {
 	t.SetCell(0, col, c)
 }
 
-func (t *Table) filtered(data render.TableData) render.TableData {
+func (t *Table) filtered(data *render.TableData) *render.TableData {
 	filtered := data
 	if t.toast {
 		filtered = filterToast(data)
@@ -423,7 +432,7 @@ func (t *Table) styleTitle() string {
 		rc--
 	}
 
-	base := strings.Title(t.gvr.R())
+	base := cases.Title(language.Und, cases.NoLower).String(t.gvr.R())
 	ns := t.GetModel().GetNamespace()
 	if client.IsClusterWide(ns) || ns == client.NotNamespaced {
 		ns = client.NamespaceAll

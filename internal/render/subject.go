@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
 	"fmt"
 
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -34,7 +37,7 @@ func (Subject) Header(ns string) Header {
 func (s Subject) Render(o interface{}, ns string, r *Row) error {
 	res, ok := o.(SubjectRes)
 	if !ok {
-		return fmt.Errorf("Expected SubjectRes, but got %T", s)
+		return fmt.Errorf("expected SubjectRes, but got %T", s)
 	}
 
 	r.ID = res.Name

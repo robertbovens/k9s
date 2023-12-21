@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Red skin
+# -----------------------------------------------------------------------------
+
+# Skin...
 k9s:
   body:
     fgColor: red
@@ -37,7 +42,7 @@ k9s:
       addColor: white
       errorColor: red
       pendingColor: darkred
-      highlightcolor: red
+      highlightColor: red
       killColor: red
       completedColor: gray
     title:
@@ -80,3 +85,5 @@ k9s:
       indicator:
         fgColor: red
         bgColor: black
+        toggleOnColor: red
+        toggleOffColor: white

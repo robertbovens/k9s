@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view_test
 
 import (
@@ -22,7 +25,7 @@ func TestLog(t *testing.T) {
 		Container: "blee",
 	}
 	v := view.NewLog(client.NewGVR("v1/pods"), &opts)
-	v.Init(makeContext())
+	assert.NoError(t, v.Init(makeContext()))
 
 	ii := dao.NewLogItems()
 	ii.Add(dao.NewLogItemFromString("blee\n"), dao.NewLogItemFromString("bozo\n"))
@@ -39,7 +42,7 @@ func TestLogFlush(t *testing.T) {
 		Container: "blee",
 	}
 	v := view.NewLog(client.NewGVR("v1/pods"), &opts)
-	v.Init(makeContext())
+	assert.NoError(t, v.Init(makeContext()))
 
 	items := dao.NewLogItems()
 	items.Add(
@@ -59,7 +62,7 @@ func BenchmarkLogFlush(b *testing.B) {
 		Container: "blee",
 	}
 	v := view.NewLog(client.NewGVR("v1/pods"), &opts)
-	v.Init(makeContext())
+	_ = v.Init(makeContext())
 
 	items := dao.NewLogItems()
 	items.Add(
@@ -97,7 +100,7 @@ func TestLogViewSave(t *testing.T) {
 		Container: "blee",
 	}
 	v := view.NewLog(client.NewGVR("v1/pods"), &opts)
-	v.Init(makeContext())
+	assert.NoError(t, v.Init(makeContext()))
 
 	app := makeApp()
 	ii := dao.NewLogItems()
@@ -108,10 +111,8 @@ func TestLogViewSave(t *testing.T) {
 
 	dir := filepath.Join(app.Config.K9s.GetScreenDumpDir(), app.Config.K9s.CurrentCluster)
 	c1, _ := os.ReadDir(dir)
-	fmt.Println("C1", c1)
 	v.SaveCmd(nil)
 	c2, _ := os.ReadDir(dir)
-	fmt.Println("C2", c2)
 	assert.Equal(t, len(c2), len(c1)+1)
 }
 
@@ -132,7 +133,7 @@ func TestAllContainerKeyBinding(t *testing.T) {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
 			v := view.NewLog(client.NewGVR("v1/pods"), u.opts)
-			v.Init(makeContext())
+			assert.NoError(t, v.Init(makeContext()))
 			_, got := v.Logs().Actions()[ui.KeyA]
 			assert.Equal(t, u.e, got)
 		})

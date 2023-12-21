@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -7,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/derailed/k9s/internal/client"
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -88,7 +91,7 @@ func (Container) Header(ns string) Header {
 		HeaderColumn{Name: "%MEM/L", Align: tview.AlignRight, MX: true},
 		HeaderColumn{Name: "PORTS"},
 		HeaderColumn{Name: "VALID", Wide: true},
-		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
+		HeaderColumn{Name: "AGE", Time: true},
 	}
 }
 
@@ -96,7 +99,7 @@ func (Container) Header(ns string) Header {
 func (c Container) Render(o interface{}, name string, r *Row) error {
 	co, ok := o.(ContainerRes)
 	if !ok {
-		return fmt.Errorf("Expected ContainerRes, but got %T", o)
+		return fmt.Errorf("expected ContainerRes, but got %T", o)
 	}
 
 	cur, res := gatherMetrics(co.Container, co.MX)
@@ -124,8 +127,8 @@ func (c Container) Render(o interface{}, name string, r *Row) error {
 		client.ToPercentageStr(cur.mem, res.mem),
 		client.ToPercentageStr(cur.mem, res.lmem),
 		ToContainerPorts(co.Container.Ports),
-		asStatus(c.diagnose(state, ready)),
-		toAge(co.Age),
+		AsStatus(c.diagnose(state, ready)),
+		ToAge(co.Age),
 	}
 
 	return nil

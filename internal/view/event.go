@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
 	"github.com/derailed/k9s/internal/client"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 )
 
 // Event represents a command alias view.
@@ -17,8 +19,6 @@ func NewEvent(gvr client.GVR) ResourceViewer {
 	e := Event{
 		ResourceViewer: NewBrowser(gvr),
 	}
-	var r *render.Event
-	e.GetTable().SetColorerFn(r.ColorerFunc())
 	e.AddBindKeysFn(e.bindKeys)
 	e.GetTable().SetSortCol("LAST SEEN", false)
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -6,9 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
+	"github.com/derailed/tcell/v2"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/duration"
 )
 
 // ScreenDump renders a screendumps to screen.
@@ -29,7 +33,7 @@ func (ScreenDump) Header(ns string) Header {
 		HeaderColumn{Name: "NAME"},
 		HeaderColumn{Name: "DIR"},
 		HeaderColumn{Name: "VALID", Wide: true},
-		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
+		HeaderColumn{Name: "AGE", Time: true},
 	}
 }
 
@@ -55,7 +59,7 @@ func (b ScreenDump) Render(o interface{}, ns string, r *Row) error {
 // Helpers...
 
 func timeToAge(timestamp time.Time) string {
-	return time.Since(timestamp).String()
+	return duration.HumanDuration(time.Since(timestamp))
 }
 
 // FileRes represents a file resource.

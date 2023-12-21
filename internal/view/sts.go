@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -5,7 +8,6 @@ import (
 
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
 	appsv1 "k8s.io/api/apps/v1"
 )
@@ -19,17 +21,18 @@ type StatefulSet struct {
 func NewStatefulSet(gvr client.GVR) ResourceViewer {
 	var s StatefulSet
 	s.ResourceViewer = NewPortForwardExtender(
-		NewRestartExtender(
-			NewScaleExtender(
-				NewImageExtender(
-					NewLogsExtender(NewBrowser(gvr), s.logOptions),
+		NewVulnerabilityExtender(
+			NewRestartExtender(
+				NewScaleExtender(
+					NewImageExtender(
+						NewLogsExtender(NewBrowser(gvr), s.logOptions),
+					),
 				),
 			),
 		),
 	)
 	s.AddBindKeysFn(s.bindKeys)
 	s.GetTable().SetEnterFn(s.showPods)
-	s.GetTable().SetColorerFn(render.StatefulSet{}.ColorerFunc())
 
 	return &s
 }
@@ -40,7 +43,7 @@ func (s *StatefulSet) logOptions(prev bool) (*dao.LogOptions, error) {
 		return nil, errors.New("you must provide a selection")
 	}
 
-	sts, err := s.sts(path)
+	sts, err := s.getInstance(path)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +53,7 @@ func (s *StatefulSet) logOptions(prev bool) (*dao.LogOptions, error) {
 		co, dco string
 		allCos  bool
 	)
-	if c, ok := dao.GetDefaultLogContainer(sts.Spec.Template.ObjectMeta, sts.Spec.Template.Spec); ok {
+	if c, ok := dao.GetDefaultContainer(sts.Spec.Template.ObjectMeta, sts.Spec.Template.Spec); ok {
 		co, dco = c, c
 	} else if len(cc) == 1 {
 		co = cc[0].Name
@@ -84,16 +87,16 @@ func (s *StatefulSet) bindKeys(aa ui.KeyActions) {
 }
 
 func (s *StatefulSet) showPods(app *App, _ ui.Tabular, _, path string) {
-	sts, err := s.sts(path)
+	i, err := s.getInstance(path)
 	if err != nil {
 		app.Flash().Err(err)
 		return
 	}
 
-	showPodsFromSelector(app, path, sts.Spec.Selector)
+	showPodsFromSelector(app, path, i.Spec.Selector)
 }
 
-func (s *StatefulSet) sts(path string) (*appsv1.StatefulSet, error) {
+func (s *StatefulSet) getInstance(path string) (*appsv1.StatefulSet, error) {
 	var sts dao.StatefulSet
-	return sts.Load(s.App().factory, path)
+	return sts.GetInstance(s.App().factory, path)
 }

@@ -1,7 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package cmd
 
 import (
 	"fmt"
+
+	"os"
 
 	"github.com/derailed/k9s/internal/color"
 	"github.com/derailed/k9s/internal/config"
@@ -9,7 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
-	"os"
 )
 
 func infoCmd() *cobra.Command {
@@ -56,5 +60,9 @@ func getScreenDumpDirForInfo() string {
 		log.Error().Err(err).Msgf("Unmarshal k9s config %v", err)
 		return config.K9sDefaultScreenDumpDir
 	}
+	if cfg.K9s == nil {
+		cfg.K9s = config.NewK9s()
+	}
+
 	return cfg.K9s.GetScreenDumpDir()
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render_test
 
 import (
@@ -10,8 +13,8 @@ import (
 func TestServiceAccountRender(t *testing.T) {
 	c := render.ServiceAccount{}
 	r := render.NewRow(4)
-	c.Render(load(t, "sa"), "", &r)
 
+	assert.NoError(t, c.Render(load(t, "sa"), "", &r))
 	assert.Equal(t, "default/blee", r.ID)
 	assert.Equal(t, render.Fields{"default", "blee", "2"}, r.Fields[:3])
 }

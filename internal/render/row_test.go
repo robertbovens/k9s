@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render_test
 
 import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/derailed/k9s/internal/render"
 	"github.com/stretchr/testify/assert"
@@ -303,7 +307,7 @@ func TestRowsSortText(t *testing.T) {
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
-			u.rows.Sort(u.col, u.asc, u.num, false)
+			u.rows.Sort(u.col, u.asc, u.num, false, false)
 			assert.Equal(t, u.e, u.rows)
 		})
 	}
@@ -316,27 +320,51 @@ func TestRowsSortDuration(t *testing.T) {
 		asc  bool
 		e    render.Rows
 	}{
-		"durationAsc": {
+		"fred": {
 			rows: render.Rows{
-				{Fields: []string{"10m10s", "duh"}},
-				{Fields: []string{"19s", "blee"}},
+				{Fields: []string{"2m24s", "blee"}},
+				{Fields: []string{"2m12s", "duh"}},
 			},
 			col: 0,
 			asc: true,
 			e: render.Rows{
-				{Fields: []string{"19s", "blee"}},
-				{Fields: []string{"10m10s", "duh"}},
+				{Fields: []string{"2m12s", "duh"}},
+				{Fields: []string{"2m24s", "blee"}},
+			},
+		},
+		"years": {
+			rows: render.Rows{
+				{Fields: []string{testTime().Add(-365 * 24 * time.Hour).String(), "blee"}},
+				{Fields: []string{testTime().String(), "duh"}},
+			},
+			col: 0,
+			asc: true,
+			e: render.Rows{
+				{Fields: []string{testTime().String(), "duh"}},
+				{Fields: []string{testTime().Add(-365 * 24 * time.Hour).String(), "blee"}},
+			},
+		},
+		"durationAsc": {
+			rows: render.Rows{
+				{Fields: []string{testTime().Add(10 * time.Second).String(), "duh"}},
+				{Fields: []string{testTime().String(), "blee"}},
+			},
+			col: 0,
+			asc: true,
+			e: render.Rows{
+				{Fields: []string{testTime().String(), "blee"}},
+				{Fields: []string{testTime().Add(10 * time.Second).String(), "duh"}},
 			},
 		},
 		"durationDesc": {
 			rows: render.Rows{
-				{Fields: []string{"10m10s", "duh"}},
-				{Fields: []string{"19s", "blee"}},
+				{Fields: []string{testTime().Add(10 * time.Second).String(), "duh"}},
+				{Fields: []string{testTime().String(), "blee"}},
 			},
 			col: 0,
 			e: render.Rows{
-				{Fields: []string{"10m10s", "duh"}},
-				{Fields: []string{"19s", "blee"}},
+				{Fields: []string{testTime().Add(10 * time.Second).String(), "duh"}},
+				{Fields: []string{testTime().String(), "blee"}},
 			},
 		},
 	}
@@ -344,7 +372,7 @@ func TestRowsSortDuration(t *testing.T) {
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
-			u.rows.Sort(u.col, u.asc, false, true)
+			u.rows.Sort(u.col, u.asc, false, true, false)
 			assert.Equal(t, u.e, u.rows)
 		})
 	}
@@ -386,8 +414,107 @@ func TestRowsSortMetrics(t *testing.T) {
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
-			u.rows.Sort(u.col, u.asc, true, false)
+			u.rows.Sort(u.col, u.asc, true, false, false)
 			assert.Equal(t, u.e, u.rows)
+		})
+	}
+}
+
+func TestRowsSortCapacity(t *testing.T) {
+	uu := map[string]struct {
+		rows render.Rows
+		col  int
+		asc  bool
+		e    render.Rows
+	}{
+		"capacityAsc": {
+			rows: render.Rows{
+				{Fields: []string{"10Gi", "duh"}},
+				{Fields: []string{"10G", "blee"}},
+			},
+			col: 0,
+			asc: true,
+			e: render.Rows{
+				{Fields: []string{"10G", "blee"}},
+				{Fields: []string{"10Gi", "duh"}},
+			},
+		},
+		"capacityDesc": {
+			rows: render.Rows{
+				{Fields: []string{"10000m", "1000Mi"}},
+				{Fields: []string{"1m", "50Mi"}},
+			},
+			col: 1,
+			asc: false,
+			e: render.Rows{
+				{Fields: []string{"10000m", "1000Mi"}},
+				{Fields: []string{"1m", "50Mi"}},
+			},
+		},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			u.rows.Sort(u.col, u.asc, false, false, true)
+			assert.Equal(t, u.e, u.rows)
+		})
+	}
+}
+
+func TestLess(t *testing.T) {
+	uu := map[string]struct {
+		isNumber   bool
+		isDuration bool
+		isCapacity bool
+		id1, id2   string
+		v1, v2     string
+		e          bool
+	}{
+		"years": {
+			isNumber:   false,
+			isDuration: true,
+			isCapacity: false,
+			id1:        "id1",
+			id2:        "id2",
+			v1:         "2y263d",
+			v2:         "1y179d",
+		},
+		"hours": {
+			isNumber:   false,
+			isDuration: true,
+			isCapacity: false,
+			id1:        "id1",
+			id2:        "id2",
+			v1:         "2y263d",
+			v2:         "19h",
+		},
+		"capacity1": {
+			isNumber:   false,
+			isDuration: false,
+			isCapacity: true,
+			id1:        "id1",
+			id2:        "id2",
+			v1:         "1Gi",
+			v2:         "1G",
+			e:          false,
+		},
+		"capacity2": {
+			isNumber:   false,
+			isDuration: false,
+			isCapacity: true,
+			id1:        "id1",
+			id2:        "id2",
+			v1:         "1Gi",
+			v2:         "1Ti",
+			e:          true,
+		},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			assert.Equal(t, u.e, render.Less(u.isNumber, u.isDuration, u.isCapacity, u.id1, u.id2, u.v1, u.v2))
 		})
 	}
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -15,7 +18,7 @@ const drainKey = "drain"
 type DrainFunc func(v ResourceViewer, path string, opts dao.DrainOptions)
 
 // ShowDrain pops a node drain dialog.
-func ShowDrain(view ResourceViewer, path string, defaults dao.DrainOptions, okFn DrainFunc) {
+func ShowDrain(view ResourceViewer, path string, opts dao.DrainOptions, okFn DrainFunc) {
 	styles := view.App().Styles
 
 	f := tview.NewForm()
@@ -26,8 +29,7 @@ func ShowDrain(view ResourceViewer, path string, defaults dao.DrainOptions, okFn
 		SetLabelColor(styles.K9s.Info.FgColor.Color()).
 		SetFieldTextColor(styles.K9s.Info.SectionColor.Color())
 
-	var opts dao.DrainOptions
-	f.AddInputField("GracePeriod:", strconv.Itoa(defaults.GracePeriodSeconds), 0, nil, func(v string) {
+	f.AddInputField("GracePeriod:", strconv.Itoa(opts.GracePeriodSeconds), 0, nil, func(v string) {
 		a, err := asIntOpt(v)
 		if err != nil {
 			view.App().Flash().Err(err)
@@ -36,7 +38,7 @@ func ShowDrain(view ResourceViewer, path string, defaults dao.DrainOptions, okFn
 		view.App().Flash().Clear()
 		opts.GracePeriodSeconds = a
 	})
-	f.AddInputField("Timeout:", defaults.Timeout.String(), 0, nil, func(v string) {
+	f.AddInputField("Timeout:", opts.Timeout.String(), 0, nil, func(v string) {
 		a, err := asDurOpt(v)
 		if err != nil {
 			view.App().Flash().Err(err)
@@ -45,13 +47,13 @@ func ShowDrain(view ResourceViewer, path string, defaults dao.DrainOptions, okFn
 		view.App().Flash().Clear()
 		opts.Timeout = a
 	})
-	f.AddCheckbox("Ignore DaemonSets:", defaults.IgnoreAllDaemonSets, func(_ string, v bool) {
+	f.AddCheckbox("Ignore DaemonSets:", opts.IgnoreAllDaemonSets, func(_ string, v bool) {
 		opts.IgnoreAllDaemonSets = v
 	})
-	f.AddCheckbox("Delete Local Data:", defaults.DeleteEmptyDirData, func(_ string, v bool) {
+	f.AddCheckbox("Delete Local Data:", opts.DeleteEmptyDirData, func(_ string, v bool) {
 		opts.DeleteEmptyDirData = v
 	})
-	f.AddCheckbox("Force:", defaults.Force, func(_ string, v bool) {
+	f.AddCheckbox("Force:", opts.Force, func(_ string, v bool) {
 		opts.Force = v
 	})
 

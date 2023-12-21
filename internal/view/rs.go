@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package view
 
 import (
@@ -5,10 +8,9 @@ import (
 
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
-	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/ui"
+	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
-	"github.com/gdamore/tcell/v2"
 )
 
 // ReplicaSet presents a replicaset viewer.
@@ -19,11 +21,10 @@ type ReplicaSet struct {
 // NewReplicaSet returns a new viewer.
 func NewReplicaSet(gvr client.GVR) ResourceViewer {
 	r := ReplicaSet{
-		ResourceViewer: NewBrowser(gvr),
+		ResourceViewer: NewVulnerabilityExtender(NewBrowser(gvr)),
 	}
 	r.AddBindKeysFn(r.bindKeys)
 	r.GetTable().SetEnterFn(r.showPods)
-	r.GetTable().SetColorerFn(render.ReplicaSet{}.ColorerFunc())
 
 	return &r
 }
@@ -79,8 +80,10 @@ func (r *ReplicaSet) dismissModal() {
 }
 
 func (r *ReplicaSet) showModal(msg string, done func(int, string)) {
+	styles := r.App().Styles.Dialog()
 	confirm := tview.NewModal().
 		AddButtons([]string{"Cancel", "OK"}).
+		SetButtonBackgroundColor(styles.ButtonBgColor.Color()).
 		SetTextColor(tcell.ColorFuchsia).
 		SetText(msg).
 		SetDoneFunc(done)

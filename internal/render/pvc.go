@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package render
 
 import (
@@ -21,12 +24,12 @@ func (PersistentVolumeClaim) Header(ns string) Header {
 		HeaderColumn{Name: "NAME"},
 		HeaderColumn{Name: "STATUS"},
 		HeaderColumn{Name: "VOLUME"},
-		HeaderColumn{Name: "CAPACITY"},
+		HeaderColumn{Name: "CAPACITY", Capacity: true},
 		HeaderColumn{Name: "ACCESS MODES"},
 		HeaderColumn{Name: "STORAGECLASS"},
 		HeaderColumn{Name: "LABELS", Wide: true},
 		HeaderColumn{Name: "VALID", Wide: true},
-		HeaderColumn{Name: "AGE", Time: true, Decorator: AgeDecorator},
+		HeaderColumn{Name: "AGE", Time: true},
 	}
 }
 
@@ -34,7 +37,7 @@ func (PersistentVolumeClaim) Header(ns string) Header {
 func (p PersistentVolumeClaim) Render(o interface{}, ns string, r *Row) error {
 	raw, ok := o.(*unstructured.Unstructured)
 	if !ok {
-		return fmt.Errorf("Expected PersistentVolumeClaim, but got %T", o)
+		return fmt.Errorf("expected PersistentVolumeClaim, but got %T", o)
 	}
 	var pvc v1.PersistentVolumeClaim
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw.Object, &pvc)
@@ -71,8 +74,8 @@ func (p PersistentVolumeClaim) Render(o interface{}, ns string, r *Row) error {
 		accessModes,
 		class,
 		mapToStr(pvc.Labels),
-		asStatus(p.diagnose(string(phase))),
-		toAge(pvc.ObjectMeta.CreationTimestamp),
+		AsStatus(p.diagnose(string(phase))),
+		ToAge(pvc.GetCreationTimestamp()),
 	}
 
 	return nil

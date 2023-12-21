@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package ui
 
 import (
@@ -128,7 +131,7 @@ func formatCell(field string, padding int) string {
 	return field
 }
 
-func filterToast(data render.TableData) render.TableData {
+func filterToast(data *render.TableData) *render.TableData {
 	validX := data.Header.IndexOf("VALID", true)
 	if validX == -1 {
 		return data
@@ -144,10 +147,11 @@ func filterToast(data render.TableData) render.TableData {
 			toast.RowEvents = append(toast.RowEvents, re)
 		}
 	}
-	return toast
+
+	return &toast
 }
 
-func rxFilter(q string, inverse bool, data render.TableData) (render.TableData, error) {
+func rxFilter(q string, inverse bool, data *render.TableData) (*render.TableData, error) {
 	if inverse {
 		q = q[1:]
 	}
@@ -161,14 +165,12 @@ func rxFilter(q string, inverse bool, data render.TableData) (render.TableData, 
 		RowEvents: make(render.RowEvents, 0, len(data.RowEvents)),
 		Namespace: data.Namespace,
 	}
-	ageIndex := -1
-	if data.Header.HasAge() {
-		ageIndex = data.Header.IndexOf("AGE", true)
-	}
+	ageIndex := data.Header.IndexOf("AGE", true)
+
 	const spacer = " "
 	for _, re := range data.RowEvents {
 		ff := re.Row.Fields
-		if ageIndex > 0 {
+		if ageIndex >= 0 && ageIndex+1 <= len(ff) {
 			ff = append(ff[0:ageIndex], ff[ageIndex+1:]...)
 		}
 		fields := strings.Join(ff, spacer)
@@ -178,10 +180,10 @@ func rxFilter(q string, inverse bool, data render.TableData) (render.TableData, 
 		}
 	}
 
-	return filtered, nil
+	return &filtered, nil
 }
 
-func fuzzyFilter(q string, data render.TableData) render.TableData {
+func fuzzyFilter(q string, data *render.TableData) *render.TableData {
 	q = strings.TrimSpace(q)
 	ss := make([]string, 0, len(data.RowEvents))
 	for _, re := range data.RowEvents {
@@ -198,5 +200,5 @@ func fuzzyFilter(q string, data render.TableData) render.TableData {
 		filtered.RowEvents = append(filtered.RowEvents, data.RowEvents[m.Index])
 	}
 
-	return filtered
+	return &filtered
 }

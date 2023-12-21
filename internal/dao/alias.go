@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package dao
 
 import (
@@ -119,6 +122,7 @@ func (a *Alias) load() error {
 			a.Define(gvrStr, meta.ShortNames...)
 		}
 		a.Define(gvrStr, gvrStr)
+		a.Define(gvrStr, meta.Name+"."+meta.Group)
 	}
 
 	return nil

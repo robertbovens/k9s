@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Authors of K9s
+
 package config_test
 
 import (
@@ -277,45 +280,50 @@ func (m *mockSettings) ClusterNames() (map[string]struct{}, error) { return nil,
 // Test Data...
 
 var expectedConfig = `k9s:
+  liveViewAutoRefresh: true
   refreshRate: 100
   maxConnRetry: 5
   enableMouse: false
+  enableImageScan: false
   headless: false
   logoless: false
   crumbsless: false
   readOnly: true
+  noExitOnCtrlC: false
   noIcons: false
+  shellPod:
+    image: busybox:1.35.0
+    namespace: default
+    limits:
+      cpu: 100m
+      memory: 100Mi
+  skipLatestRevCheck: false
   logger:
     tail: 500
     buffer: 800
-    sinceSeconds: 60
+    sinceSeconds: -1
     fullScreenLogs: false
     textWrap: false
     showTime: false
   currentContext: blee
   currentCluster: blee
+  keepMissingClusters: false
   clusters:
     blee:
       namespace:
         active: default
+        lockFavorites: false
         favorites:
         - default
       view:
         active: po
       featureGates:
         nodeShell: false
-      shellPod:
-        image: busybox:1.31
-        command: []
-        args: []
-        namespace: default
-        limits:
-          cpu: 100m
-          memory: 100Mi
       portForwardAddress: localhost
     fred:
       namespace:
         active: default
+        lockFavorites: false
         favorites:
         - default
         - kube-public
@@ -326,18 +334,11 @@ var expectedConfig = `k9s:
         active: po
       featureGates:
         nodeShell: false
-      shellPod:
-        image: busybox:1.31
-        command: []
-        args: []
-        namespace: default
-        limits:
-          cpu: 100m
-          memory: 100Mi
       portForwardAddress: localhost
     minikube:
       namespace:
         active: kube-system
+        lockFavorites: false
         favorites:
         - default
         - kube-public
@@ -348,14 +349,6 @@ var expectedConfig = `k9s:
         active: ctx
       featureGates:
         nodeShell: false
-      shellPod:
-        image: busybox:1.31
-        command: []
-        args: []
-        namespace: default
-        limits:
-          cpu: 100m
-          memory: 100Mi
       portForwardAddress: localhost
   thresholds:
     cpu:
@@ -365,44 +358,49 @@ var expectedConfig = `k9s:
       critical: 90
       warn: 70
   screenDumpDir: /tmp
+  disablePodCounting: false
 `
 
 var resetConfig = `k9s:
+  liveViewAutoRefresh: true
   refreshRate: 2
   maxConnRetry: 5
   enableMouse: false
+  enableImageScan: false
   headless: false
   logoless: false
   crumbsless: false
   readOnly: false
+  noExitOnCtrlC: false
   noIcons: false
+  shellPod:
+    image: busybox:1.35.0
+    namespace: default
+    limits:
+      cpu: 100m
+      memory: 100Mi
+  skipLatestRevCheck: false
   logger:
     tail: 200
     buffer: 2000
-    sinceSeconds: 60
+    sinceSeconds: -1
     fullScreenLogs: false
     textWrap: false
     showTime: false
   currentContext: blee
   currentCluster: blee
+  keepMissingClusters: false
   clusters:
     blee:
       namespace:
         active: default
+        lockFavorites: false
         favorites:
         - default
       view:
         active: po
       featureGates:
         nodeShell: false
-      shellPod:
-        image: busybox:1.31
-        command: []
-        args: []
-        namespace: default
-        limits:
-          cpu: 100m
-          memory: 100Mi
       portForwardAddress: localhost
   thresholds:
     cpu:
@@ -412,4 +410,5 @@ var resetConfig = `k9s:
       critical: 90
       warn: 70
   screenDumpDir: /tmp
+  disablePodCounting: false
 `
